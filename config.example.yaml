@@ -1,0 +1,44 @@
+models:
+  default:
+    provider: demo
+    model: deterministic-v1
+  planner:
+    provider: openai
+    model: gpt-5-mini
+  coder:
+    provider: openai-compatible
+    model: local-coder
+    base_url: http://localhost:11434/v1
+  reviewer:
+    provider: anthropic
+    model: claude-sonnet
+
+routing:
+  enabled: true
+  fallback_role: default
+
+repository:
+  allowed_roots:
+    - ./examples
+  max_file_bytes: 262144
+  max_context_bytes: 1048576
+  allow_writes: true
+  allow_commands: true
+  command_timeout_seconds: 120
+  max_command_output_bytes: 1048576
+  allowed_commands:
+    - [pytest]
+    - [ruff, check]
+    - [ruff, format, --check]
+    - [npm, test]
+    - [npm, run, lint]
+
+workflow:
+  max_repair_attempts: 2
+  require_plan_approval: true
+  require_command_approval: false
+  require_write_approval: false
+
+observability:
+  langsmith_enabled: false
+  log_level: INFO

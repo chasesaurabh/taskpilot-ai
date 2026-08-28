@@ -1,0 +1,171 @@
+# Architecture
+
+## System context
+
+TaskPilot AI is a single-installation developer platform that coordinates a software change inside an explicitly allowed Git repository. It separates deterministic workflow and policy from probabilistic model behavior.
+
+```mermaid
+flowchart LR
+    User --> Web[React web application]
+    User --> CLI[Typer CLI]
+    Web --> API[FastAPI]
+    CLI --> API
+    API --> Service[Run application service]
+    Service --> Graph[LangGraph StateGraph]
+    Graph --> Gateway[LangChain model gateway]
+    Graph --> Tools[Repository capability layer]
+    Graph --> CP[(LangGraph checkpointer)]
+    Service --> Store[(Run and event store)]
+    Tools --> Repo[Allowed repository]
+    Gateway --> Providers[Hosted or local models]
+    Graph -. telemetry .-> Observe[Logs and LangSmith]
+```
+
+## Component boundaries
+
+| Component | Owns | Does not own |
+| --- | --- | --- |
+| API | HTTP validation, lifecycle endpoints, SSE transport | Graph decisions or repository access |
+| Application service | Run concurrency, graph invocation/resume, event publication | Prompt logic |
+| LangGraph graph | State transitions, parallelism, interrupts, retry routing | Provider SDK details or arbitrary shell execution |
+| Nodes | One engineering responsibility and typed state update | Cross-run persistence plumbing |
+| Model gateway | Provider construction, structured output, usage normalization, routing | Workflow sequencing |
+| Repository tools | Canonical paths, capabilities, bounded reads/writes/commands | Choosing what engineering change to make |
+| Persistence | Checkpoints, run projections, append-only events, artifacts | Business routing |
+| Observability | Correlated logs, traces, timings, usage | Authoritative workflow state |
+
+## Workflow
+
+```mermaid
+flowchart TD
+    Start --> Context[Repository context]
+    Context --> Analyze[Task analysis]
+    Analyze --> Plan[Implementation plan]
+    Plan --> Architecture[Architecture review]
+    Plan --> Impact[Repository impact analysis]
+    Architecture --> Approval{Human approval}
+    Impact --> Approval
+    Approval -->|approved| Implement[Implementation]
+    Approval -->|rejected| Report[Final report]
+    Implement --> Test[Validation]
+    Test -->|passed| Review[AI-assisted review]
+    Test -->|failed and retry budget remains| Diagnose[Failure analysis]
+    Diagnose --> Repair[Repair]
+    Repair --> Test
+    Test -->|retry budget exhausted| Report
+    Review -->|blocking and budget remains| Repair
+    Review -->|accepted or exhausted| Report
+    Report --> End
+```
+
+Architecture and repository-impact analysis run in the same LangGraph superstep. The join waits for both updates before entering approval. Routing functions are deterministic: they inspect typed results, approval status, and counters; they do not ask a model where the graph should go.
+
+## State model
+
+The graph uses a versioned `WorkflowState` schema. Nodes return partial updates rather than mutating shared objects. State areas and owners are:
+
+| State area | Primary writer | Lifecycle |
+| --- | --- | --- |
+| Run/task metadata and policy snapshot | run service | Immutable after start |
+| Repository descriptor and context manifest | context node | Replaced when context is refreshed |
+| Task analysis and plan | analysis/planning nodes | Stable after approval unless explicitly revised |
+| Architecture and impact findings | parallel analysis nodes | Stable after join |
+| Approval request and decisions | approval node | Append-only decisions |
+| Proposed/applied changes | implementation/repair nodes | Replaced per attempt; applied records append |
+| Validation and diagnosis | test/diagnosis nodes | Latest result plus bounded attempt summaries |
+| Retry counters | deterministic routing nodes | Monotonic and policy bounded |
+| Review findings | review node | Latest structured review |
+| Model decisions and usage | model gateway | Append-only bounded summaries |
+| Errors and terminal outcome | node wrapper/report node | Bounded errors; outcome set once |
+
+Large file contents, patches, command output, and reports are stored as artifacts. Checkpoint state contains identifiers, hashes, excerpts, and metadata. This limits serialization cost and avoids copying growing payloads at every graph superstep.
+
+## Execution lifecycle
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Client as CLI / Web
+    participant API
+    participant Runs as Run service
+    participant Graph as LangGraph
+    participant DB as Checkpoint + event stores
+    participant Repo as Repository tools
+    participant Model as Model gateway
+
+    User->>Client: Submit repository and task
+    Client->>API: POST /runs
+    API->>Runs: Create run and start graph
+    Runs->>Graph: astream(input, thread_id=run_id)
+    Graph->>Repo: Gather bounded context
+    Graph->>Model: Analyze and plan
+    Graph->>DB: Checkpoint each superstep
+    Graph-->>Runs: Interrupt with approval payload
+    Runs->>DB: Persist waiting event
+    API-->>Client: SSE waiting_for_approval
+    User->>Client: Approve
+    Client->>API: POST /runs/{id}/approve
+    API->>Graph: Command(resume=decision)
+    Graph->>Repo: Apply validated changes and run allowed tests
+    alt tests fail and retries remain
+        Graph->>Model: Diagnose failure and propose repair
+        Graph->>Repo: Apply repair and retest
+    end
+    Graph->>Model: Review resulting diff
+    Graph->>DB: Persist final checkpoint and events
+    API-->>Client: SSE completed
+```
+
+## Persistence and resume
+
+LangGraph checkpoints are authoritative for graph position and workflow state. The run store is a query-optimized projection for API status, timestamps, ownership, and terminal outcome. The event store is append-only and provides monotonic sequence numbers for replayable SSE. Artifacts hold bulky output.
+
+Local mode uses SQLite. Production mode uses PostgreSQL for all three concerns while retaining their logical separation. The run ID is also the LangGraph `thread_id`. Approval resumes the same thread with `Command(resume=...)`. Run status transitions use compare-and-set semantics so duplicate approvals or competing workers cannot resume a graph twice.
+
+Node side effects must be idempotent. A write records the expected previous hash and uses an atomic replacement. Command executions have attempt IDs. Event publication accepts a node/attempt idempotency key. A process crash therefore resumes from the last durable superstep without silently multiplying side effects.
+
+## Model abstraction and routing
+
+LangChain chat-model interfaces provide invocation, tools, structured output, and streaming. TaskPilot adds a small `ModelGateway` around those interfaces to normalize capabilities, timeouts, token usage, and errors. A configuration registry maps roles (`context`, `planner`, `architect`, `coder`, `reviewer`) to provider definitions.
+
+Routing is explicit policy, not hidden model selection. It can assign small/local models to context classification, coding models to change generation, and stronger reasoning models to architecture and review. Each decision is recorded with reason, provider, model, latency, and usage. This makes cost, quality, latency, and privacy tradeoffs observable.
+
+The initial provider factories cover deterministic demo, OpenAI, Anthropic, and OpenAI-compatible endpoints. Local services such as vLLM or Ollama can use an OpenAI-compatible endpoint when they implement the required API behavior.
+
+## Repository tool security
+
+Repository input and model output are untrusted. Every operation resolves paths against a canonical configured repository root and rejects absolute paths, traversal, escape through symlinks, oversized input, and unsupported encodings. Capabilities are separate:
+
+- read: list, bounded file read, literal/regex search, Git status/diff;
+- write: atomic create/replace of explicitly named files with precondition hashes;
+- execute: argument-vector commands matched against configured prefixes.
+
+There is no general shell tool. Commands do not use shell interpolation, inherit only an allowlisted environment, have time and output limits, and run in the repository root. Approval policy can independently gate plans, writes, and commands. This reduces accidents but is not isolation from a malicious repository; disposable containers or VMs are required for that threat model.
+
+## Human approval
+
+The default policy requires one approval after the plan and parallel architecture/impact analysis, before any write. The interrupt payload contains the plan, findings, intended files, proposed validation commands, risks, and policy-relevant actions. A rejection requires an optional reason and terminates with an auditable report. Deployments may enable additional write or command gates, but approval fatigue is deliberately avoided by default.
+
+## Streaming
+
+The graph emits typed internal events. The application service normalizes them into stable public events and persists each event before live publication. `GET /runs/{id}/events` uses Server-Sent Events because updates are server-to-client, browsers reconnect natively, and `Last-Event-ID` supports replay. Mutations such as approval and rejection remain authenticated HTTP requests. The public event schema is versioned independently of raw LangGraph events.
+
+## Failure recovery
+
+Validation is deterministic: exit code, timeout, and configured required commands determine pass or fail. A failed result enters diagnosis, then repair, then validation. The retry counter increments once per repair attempt and cannot exceed the policy snapshot. Exhaustion routes to a terminal `failed` report that records the original failure, each attempted repair, the final output artifact, and why execution stopped. Unexpected node exceptions are classified as transient or terminal; only explicitly transient operations receive bounded infrastructure retries.
+
+## Observability
+
+Structured application logs include run ID, graph node, attempt, event sequence, duration, and error class. The model gateway records provider/model, latency, input/output tokens when reported, and estimated usage when configured. LangSmith tracing is opt-in and complements rather than replaces application logs and state. Secrets, full source files, and raw prompts are excluded or redacted by default.
+
+## Deployment model
+
+Local development runs API, worker, and SQLite in one process, plus the Vite frontend. Docker Compose adds PostgreSQL and independently runnable API/web services. The first production-oriented deployment still assumes a trusted single installation. A future worker queue can claim persisted runnable runs using leases without changing graph or API contracts.
+
+## Major tradeoffs
+
+- **Custom API over LangGraph Agent Server:** demonstrates and controls the application lifecycle, event schema, and security boundary; requires more persistence plumbing.
+- **SSE over WebSockets:** simpler replay and operations for one-way progress; interactive token-by-token bidirectional sessions are out of scope.
+- **Artifacts outside graph state:** lower checkpoint growth and safer API projections; artifact availability becomes part of backup and retention design.
+- **In-process local worker first:** excellent developer experience and deterministic tests; horizontal execution requires the documented lease/worker evolution.
+- **Allowlisted host processes:** practical for trusted development; hostile repositories require external isolation.
