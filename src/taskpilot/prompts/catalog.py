@@ -61,6 +61,13 @@ FAILURE_ANALYSIS_PROMPT = _prompt(
     "Changes:\n{changes}\n\nValidation failure:\n{validation}",
 )
 
+REPAIR_PROMPT = _prompt(
+    "repair",
+    "Propose the smallest complete file changes that address the diagnosed failure. Preserve "
+    "correct prior work and never emit paths outside the repository.",
+    "Plan:\n{plan}\n\nCurrent files:\n{context}\n\nFailure diagnosis:\n{diagnosis}",
+)
+
 CODE_REVIEW_PROMPT = _prompt(
     "code-review",
     "Review the diff for correctness, regressions, security, maintainability, and missing tests.",

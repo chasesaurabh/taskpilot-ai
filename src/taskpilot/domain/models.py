@@ -126,6 +126,19 @@ class ChangeSet(DomainModel):
     changes: tuple[FileChange, ...] = ()
 
 
+class ProposedFileChange(DomainModel):
+    path: str
+    operation: str
+    content: str
+    expected_sha256: str | None = None
+    rationale: str = ""
+
+
+class ImplementationProposal(DomainModel):
+    summary: str
+    changes: tuple[ProposedFileChange, ...]
+
+
 class ValidationResult(DomainModel):
     passed: bool
     command: tuple[str, ...]

@@ -8,23 +8,17 @@ TaskPilot AI turns a repository-scoped engineering request into an observable, r
 
 ## Project status
 
-TaskPilot AI is under active construction. The architecture and quality foundation are in place; executable workflow milestones are tracked in the [roadmap](#roadmap). Capabilities are documented as implemented only when they are covered by tests.
+TaskPilot AI is under active construction. The core model-assisted workflow, deterministic routing, constrained repository tools, validation, and repair loop are implemented and tested. Durable approval, product interfaces, and deployment packaging remain in progress; see the [roadmap](#roadmap).
 
 ## Why this exists
 
 Coding agents are useful, but unconstrained model/tool loops are difficult to operate safely. Engineering work needs deterministic boundaries around probabilistic behavior: visible plans, bounded tools, approval gates, validation, retry limits, durable state, and an audit trail. TaskPilot AI makes those controls first-class product concepts.
 
-## Planned capabilities
+## Capabilities
 
-- Typed LangGraph workflow with parallel analysis and conditional repair loops
-- Human approval that survives process restarts
-- Constrained repository read, write, and command tools
-- OpenAI, Anthropic, OpenAI-compatible, local, and deterministic demo models
-- FastAPI lifecycle API with replayable Server-Sent Events
-- Typer CLI and a graph-first React interface
-- SQLite local persistence and PostgreSQL production configuration
-- Structured logs, per-run correlation IDs, and optional LangSmith tracing
-- Deterministic test and evaluation scenarios that require no paid model
+- **Implemented:** typed LangGraph workflow, parallel analysis, conditional repair loops, retry exhaustion, constrained repository operations, provider-neutral structured models, explicit routing, and a deterministic no-key model.
+- **Next:** durable human approval and restart-safe checkpoint resume.
+- **Planned:** FastAPI/SSE, CLI, graph-first React UI, PostgreSQL, Docker, structured observability, and packaged evaluation scenarios.
 
 ## Architecture
 
@@ -108,7 +102,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for workflow and commit conventions.
 
 ## Limitations
 
-- The foundation milestone does not yet execute workflows.
+- The core graph is currently exercised as a Python library; API, CLI, and web entry points are not yet available.
 - The initial runtime targets one trusted developer per installation, not multi-tenant isolation.
 - Repository commands are processes on the host unless an external sandbox is configured.
 - Provider behavior and structured-output quality vary; capability checks and fallbacks cannot eliminate that variance.

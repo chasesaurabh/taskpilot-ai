@@ -13,6 +13,7 @@ from taskpilot.domain.models import (
     FailureDiagnosis,
     FinalReport,
     ImplementationPlan,
+    ImplementationProposal,
     ModelDecision,
     NodeRecord,
     RepositoryContext,
@@ -45,6 +46,7 @@ class WorkflowState(TypedDict, total=False):
     repository_report: AnalysisReport
     approval: ApprovalDecision
     change_set: ChangeSet
+    proposal: ImplementationProposal
     validation: ValidationResult
     diagnosis: FailureDiagnosis
     repair_attempts: int
@@ -66,6 +68,7 @@ class WorkflowUpdate(TypedDict, total=False):
     repository_report: AnalysisReport
     approval: ApprovalDecision
     change_set: ChangeSet
+    proposal: ImplementationProposal
     validation: ValidationResult
     diagnosis: FailureDiagnosis
     repair_attempts: int
