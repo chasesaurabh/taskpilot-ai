@@ -8,7 +8,7 @@ TaskPilot AI turns a repository-scoped engineering request into an observable, r
 
 ## Project status
 
-TaskPilot AI is under active construction. The core workflow, durable approval, API, SSE, and CLI are implemented and tested. The graph-first web interface and deployment packaging remain in progress; see the [roadmap](#roadmap).
+TaskPilot AI is under active construction. The core workflow, durable approval, API, SSE, CLI, and graph-first web interface are implemented and tested. Deployment packaging remains in progress; see the [roadmap](#roadmap).
 
 ## Why this exists
 
@@ -16,9 +16,9 @@ Coding agents are useful, but unconstrained model/tool loops are difficult to op
 
 ## Capabilities
 
-- **Implemented:** typed LangGraph workflow, parallel analysis, conditional repair loops, retry exhaustion, constrained repository operations, provider-neutral structured models, explicit routing, native human interrupts, durable SQLite checkpoints, restart-safe resume, lifecycle API, replayable SSE, deterministic no-key model, installable CLI, and repeatable evaluation scenarios.
-- **Next:** graph-first web interface.
-- **Planned:** PostgreSQL, Docker, structured observability, and release hardening.
+- **Implemented:** typed LangGraph workflow, parallel analysis, conditional repair loops, retry exhaustion, constrained repository operations, provider-neutral structured models, explicit routing, native human interrupts, durable SQLite checkpoints, restart-safe resume, lifecycle API, replayable SSE, deterministic no-key model, installable CLI, repeatable evaluation scenarios, and a responsive graph-first React interface.
+- **Next:** structured observability, PostgreSQL support, Docker packaging, and a runnable sample repository.
+- **Planned:** CI, security hardening, and release documentation.
 
 ## Architecture
 
@@ -117,6 +117,17 @@ POST /runs/{run_id}/reject
 
 Events are persisted before publication. Reconnecting clients can replay missed events by sequence, while compare-and-set status changes prevent duplicate approval from resuming a run twice.
 
+## Web interface
+
+The React application treats the workflow graph as the primary control surface. It streams run events, shows each node's status, exposes model and validation metadata in an inspector, and presents approval or rejection controls when the graph pauses.
+
+```bash
+pnpm install
+pnpm --filter @taskpilot/web dev
+```
+
+Set `VITE_API_URL` when the lifecycle API is not available at `http://localhost:8000`.
+
 ## Configuration
 
 Configuration is environment-driven with an optional YAML policy file. See [.env.example](.env.example) and [config.example.yaml](config.example.yaml). Secrets must be passed through the environment and must never be committed.
@@ -144,13 +155,17 @@ uv run ruff format --check .
 uv run ruff check .
 uv run mypy src
 uv run pytest
+pnpm --filter @taskpilot/web format:check
+pnpm --filter @taskpilot/web lint
+pnpm --filter @taskpilot/web test
+pnpm --filter @taskpilot/web build
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for workflow and commit conventions.
 
 ## Limitations
 
-- The graph and API application factory are implemented; the packaged runtime entry point, CLI, and web interface are not yet available.
+- The graph, API application factory, CLI, and web interface are implemented; the packaged API runtime entry point is not yet available.
 - The initial runtime targets one trusted developer per installation, not multi-tenant isolation.
 - Repository commands are processes on the host unless an external sandbox is configured.
 - Provider behavior and structured-output quality vary; capability checks and fallbacks cannot eliminate that variance.
