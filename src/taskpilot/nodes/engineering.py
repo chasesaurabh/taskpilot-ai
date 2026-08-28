@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
+from langgraph.types import interrupt
 from pydantic import BaseModel, ConfigDict, Field
 
 from taskpilot.domain.models import (
     AnalysisReport,
+    ApprovalAction,
     ApprovalDecision,
+    ApprovalRequest,
+    ApprovalResponse,
     ApprovalStatus,
     ChangeSet,
     ContextFile,
@@ -223,8 +228,38 @@ class EngineeringNodes:
 
     def approval(self, state: WorkflowState) -> WorkflowUpdate:
         if state["policy"].require_plan_approval:
-            decision = ApprovalDecision(reason="Durable approval interrupt is not yet configured")
-            detail = "approval required"
+            proposed_files = tuple(
+                dict.fromkeys(path for step in state["plan"].steps for path in step.expected_files)
+            )
+            risks = tuple(
+                finding.detail
+                for report in (state["architecture_report"], state["repository_report"])
+                for finding in report.findings
+                if finding.severity in {"warning", "blocking"}
+            )
+            request = ApprovalRequest(
+                run_id=state["metadata"].run_id,
+                task=state["task"].description,
+                plan=state["plan"],
+                architecture=state["architecture_report"],
+                repository_impact=state["repository_report"],
+                proposed_files=proposed_files,
+                proposed_commands=state["plan"].proposed_commands,
+                risks=risks,
+            )
+            response = ApprovalResponse.model_validate(interrupt(request.model_dump(mode="json")))
+            status = (
+                ApprovalStatus.APPROVED
+                if response.action == ApprovalAction.APPROVE
+                else ApprovalStatus.REJECTED
+            )
+            decision = ApprovalDecision(
+                status=status,
+                actor=response.actor,
+                reason=response.reason,
+                decided_at=datetime.now(UTC),
+            )
+            detail = f"{response.action} by {response.actor}"
         else:
             decision = ApprovalDecision(status=ApprovalStatus.APPROVED, actor="policy:auto")
             detail = "auto-approved by policy"

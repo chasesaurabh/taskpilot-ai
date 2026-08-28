@@ -113,6 +113,28 @@ class ApprovalDecision(DomainModel):
     decided_at: datetime | None = None
 
 
+class ApprovalAction(StrEnum):
+    APPROVE = "approve"
+    REJECT = "reject"
+
+
+class ApprovalRequest(DomainModel):
+    run_id: str
+    task: str
+    plan: ImplementationPlan
+    architecture: AnalysisReport
+    repository_impact: AnalysisReport
+    proposed_files: tuple[str, ...] = ()
+    proposed_commands: tuple[tuple[str, ...], ...] = ()
+    risks: tuple[str, ...] = ()
+
+
+class ApprovalResponse(DomainModel):
+    action: ApprovalAction
+    actor: str = Field(min_length=1)
+    reason: str | None = None
+
+
 class FileChange(DomainModel):
     path: str
     operation: str

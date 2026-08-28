@@ -5,8 +5,11 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Command
 
 from taskpilot.domain.models import (
     AnalysisReport,
@@ -91,7 +94,12 @@ def _gateway(*, repair_content: str = "good\n") -> ModelGateway:
     )
 
 
-def _graph(repository: Path, *, repair_content: str = "good\n"):
+def _graph(
+    repository: Path,
+    *,
+    repair_content: str = "good\n",
+    checkpointer: Any | None = None,
+):
     repository_policy = RepositoryToolPolicy(
         allowed_roots=(repository.parent,),
         allow_writes=True,
@@ -102,7 +110,7 @@ def _graph(repository: Path, *, repair_content: str = "good\n"):
     nodes = EngineeringNodes(
         models=_gateway(repair_content=repair_content), repository_policy=repository_policy
     )
-    return build_workflow(nodes.as_workflow_nodes())
+    return build_workflow(nodes.as_workflow_nodes(), checkpointer=checkpointer)
 
 
 def _repository(tmp_path: Path) -> Path:
@@ -161,3 +169,38 @@ def test_real_nodes_stop_safely_when_repairs_never_pass(
     assert result["final_report"].outcome == RunStatus.FAILED
     assert "exhausted" in (result["final_report"].stop_reason or "")
     assert "code_review" not in [record.node for record in result["node_history"]]
+
+
+def test_real_approval_interrupt_discloses_plan_and_blocks_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository = _repository(tmp_path)
+    monkeypatch.setenv(
+        "PATH", f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}"
+    )
+    graph = _graph(repository, checkpointer=InMemorySaver())
+    config = {"configurable": {"thread_id": "approval-run"}}
+
+    paused = graph.invoke(
+        create_initial_state(
+            run_id="approval-run",
+            task="Set the value to good",
+            repository_root=str(repository),
+            policy=WorkflowPolicy(require_plan_approval=True, max_repair_attempts=2),
+        ),
+        config,
+    )
+
+    payload = paused["__interrupt__"][0].value
+    assert payload["run_id"] == "approval-run"
+    assert payload["plan"]["summary"] == "Change value and validate"
+    assert payload["proposed_commands"]
+    assert (repository / "value.txt").read_bytes() == b"initial\n"
+
+    result = graph.invoke(
+        Command(resume={"action": "approve", "actor": "principal@example.com"}),
+        config,
+    )
+
+    assert result["approval"].actor == "principal@example.com"
+    assert result["final_report"].outcome == RunStatus.COMPLETED

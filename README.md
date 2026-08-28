@@ -16,8 +16,8 @@ Coding agents are useful, but unconstrained model/tool loops are difficult to op
 
 ## Capabilities
 
-- **Implemented:** typed LangGraph workflow, parallel analysis, conditional repair loops, retry exhaustion, constrained repository operations, provider-neutral structured models, explicit routing, and a deterministic no-key model.
-- **Next:** durable human approval and restart-safe checkpoint resume.
+- **Implemented:** typed LangGraph workflow, parallel analysis, conditional repair loops, retry exhaustion, constrained repository operations, provider-neutral structured models, explicit routing, native human interrupts, durable SQLite checkpoints, restart-safe resume, and a deterministic no-key model.
+- **Next:** lifecycle API and replayable event streaming.
 - **Planned:** FastAPI/SSE, CLI, graph-first React UI, PostgreSQL, Docker, structured observability, and packaged evaluation scenarios.
 
 ## Architecture
