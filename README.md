@@ -8,7 +8,7 @@ TaskPilot AI turns a repository-scoped engineering request into an observable, r
 
 ## Project status
 
-TaskPilot AI is under active construction. The core model-assisted workflow, deterministic routing, constrained repository tools, validation, and repair loop are implemented and tested. Durable approval, product interfaces, and deployment packaging remain in progress; see the [roadmap](#roadmap).
+TaskPilot AI is under active construction. The core workflow, durable approval, API, SSE, and CLI are implemented and tested. The graph-first web interface and deployment packaging remain in progress; see the [roadmap](#roadmap).
 
 ## Why this exists
 
@@ -16,9 +16,9 @@ Coding agents are useful, but unconstrained model/tool loops are difficult to op
 
 ## Capabilities
 
-- **Implemented:** typed LangGraph workflow, parallel analysis, conditional repair loops, retry exhaustion, constrained repository operations, provider-neutral structured models, explicit routing, native human interrupts, durable SQLite checkpoints, restart-safe resume, lifecycle API, replayable SSE, and a deterministic no-key model.
-- **Next:** developer CLI and repeatable evaluation scenarios.
-- **Planned:** FastAPI/SSE, CLI, graph-first React UI, PostgreSQL, Docker, structured observability, and packaged evaluation scenarios.
+- **Implemented:** typed LangGraph workflow, parallel analysis, conditional repair loops, retry exhaustion, constrained repository operations, provider-neutral structured models, explicit routing, native human interrupts, durable SQLite checkpoints, restart-safe resume, lifecycle API, replayable SSE, deterministic no-key model, installable CLI, and repeatable evaluation scenarios.
+- **Next:** graph-first web interface.
+- **Planned:** PostgreSQL, Docker, structured observability, and release hardening.
 
 ## Architecture
 
@@ -70,6 +70,39 @@ uv run taskpilot run --repo ./examples/sample-api \
 
 The no-key demo model will exercise success, repair, rejection, resume, and retry-exhaustion scenarios without pretending to be a production model.
 
+## CLI
+
+```bash
+taskpilot run \
+  --repo ./examples/sample-api \
+  --task "Add pagination to the products endpoint and update tests"
+```
+
+Use `--approval ask` for an interactive gate, `--approval approve` for a trusted demo, or `--approval stop` to leave the durable run waiting. A stopped run can be resumed from any client:
+
+```bash
+taskpilot approve <run-id> --actor you@example.com
+taskpilot reject <run-id> --reason "Revise the data migration approach"
+taskpilot status <run-id>
+taskpilot events <run-id> --after 12
+```
+
+Representative output:
+
+```text
+✓ Repository context gathered
+✓ Change analyzed
+✓ Implementation plan created
+✓ Architecture review completed
+
+⏸ Human approval required
+
+✓ Implementation completed
+✓ Validation completed
+✓ Code review completed
+✓ Final report generated
+```
+
 ## API lifecycle
 
 The versioned FastAPI contract separates commands from observation:
@@ -95,6 +128,7 @@ TaskPilot AI is a developer tool, not a secure sandbox for hostile repositories.
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [Evaluation scenarios](docs/evaluations.md)
 - [Why LangGraph](docs/adr/001-why-langgraph.md)
 - [State and checkpoint design](docs/adr/002-state-and-checkpoint-design.md)
 - [Human-in-the-loop policy](docs/adr/003-human-in-the-loop-policy.md)
