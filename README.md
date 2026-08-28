@@ -16,8 +16,8 @@ Coding agents are useful, but unconstrained model/tool loops are difficult to op
 
 ## Capabilities
 
-- **Implemented:** typed LangGraph workflow, parallel analysis, conditional repair loops, retry exhaustion, constrained repository operations, provider-neutral structured models, explicit routing, native human interrupts, durable SQLite checkpoints, restart-safe resume, and a deterministic no-key model.
-- **Next:** lifecycle API and replayable event streaming.
+- **Implemented:** typed LangGraph workflow, parallel analysis, conditional repair loops, retry exhaustion, constrained repository operations, provider-neutral structured models, explicit routing, native human interrupts, durable SQLite checkpoints, restart-safe resume, lifecycle API, replayable SSE, and a deterministic no-key model.
+- **Next:** developer CLI and repeatable evaluation scenarios.
 - **Planned:** FastAPI/SSE, CLI, graph-first React UI, PostgreSQL, Docker, structured observability, and packaged evaluation scenarios.
 
 ## Architecture
@@ -70,6 +70,20 @@ uv run taskpilot run --repo ./examples/sample-api \
 
 The no-key demo model will exercise success, repair, rejection, resume, and retry-exhaustion scenarios without pretending to be a production model.
 
+## API lifecycle
+
+The versioned FastAPI contract separates commands from observation:
+
+```text
+POST /runs
+GET  /runs/{run_id}
+GET  /runs/{run_id}/events     # SSE; honors Last-Event-ID
+POST /runs/{run_id}/approve
+POST /runs/{run_id}/reject
+```
+
+Events are persisted before publication. Reconnecting clients can replay missed events by sequence, while compare-and-set status changes prevent duplicate approval from resuming a run twice.
+
 ## Configuration
 
 Configuration is environment-driven with an optional YAML policy file. See [.env.example](.env.example) and [config.example.yaml](config.example.yaml). Secrets must be passed through the environment and must never be committed.
@@ -102,7 +116,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for workflow and commit conventions.
 
 ## Limitations
 
-- The core graph is currently exercised as a Python library; API, CLI, and web entry points are not yet available.
+- The graph and API application factory are implemented; the packaged runtime entry point, CLI, and web interface are not yet available.
 - The initial runtime targets one trusted developer per installation, not multi-tenant isolation.
 - Repository commands are processes on the host unless an external sandbox is configured.
 - Provider behavior and structured-output quality vary; capability checks and fallbacks cannot eliminate that variance.
