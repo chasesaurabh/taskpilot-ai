@@ -413,6 +413,29 @@ textarea:focus {
   font-size: 10px;
   line-height: 1.5;
 }
+
+.operation-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.operation-list div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  background: rgb(7 13 24 / 55%);
+}
+
+.operation-list span {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
 .text-running {
   color: var(--cyan);
 }

@@ -8,15 +8,17 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import structlog
 from fastapi.encoders import jsonable_encoder
 from langgraph.types import Command
+from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from taskpilot.domain.models import ApprovalAction, RunStatus, WorkflowPolicy
 from taskpilot.graph.state import create_initial_state
+from taskpilot.persistence.protocols import RunStore
 from taskpilot.persistence.runs import (
     RunConflictError,
     RunRecord,
-    SqliteRunStore,
 )
 from taskpilot.tools.repository import RepositoryWorkspace
 from taskpilot.tools.types import RepositoryToolPolicy
@@ -29,7 +31,7 @@ class RunService:
         self,
         *,
         graph: Any,
-        store: SqliteRunStore,
+        store: RunStore,
         repository_policy: RepositoryToolPolicy,
     ) -> None:
         self._graph = graph
@@ -117,6 +119,9 @@ class RunService:
             await asyncio.gather(*tuple(self._tasks))
 
     async def _drive(self, run_id: str, graph_input: Any, *, resumed: bool) -> None:
+        clear_contextvars()
+        bind_contextvars(run_id=run_id)
+        logger = structlog.get_logger(__name__)
         config = {"configurable": {"thread_id": run_id}}
         interrupted = False
         await self.store.append_event(
@@ -124,6 +129,7 @@ class RunService:
             "run.resumed" if resumed else "run.started",
             idempotency_key="run.resumed" if resumed else "run.started",
         )
+        logger.info("workflow_started", resumed=resumed)
         try:
             async for mode, chunk in self._graph.astream(
                 graph_input,
@@ -145,18 +151,20 @@ class RunService:
                     )
                     continue
                 for node, update in chunk.items():
-                    await self.store.append_event(
+                    event = await self.store.append_event(
                         run_id,
                         "node.completed",
                         node=node,
                         data=_public_update(update),
                     )
+                    await self._emit_derived_events(run_id, node, update, event.sequence)
             if interrupted:
                 await self.store.transition(
                     run_id,
                     expected={RunStatus.RUNNING},
                     target=RunStatus.WAITING,
                 )
+                logger.info("workflow_waiting_for_approval")
                 return
 
             snapshot = await self._graph.aget_state(config)
@@ -176,7 +184,9 @@ class RunService:
                 data={"outcome": outcome, "summary": report.summary},
                 idempotency_key="run.terminal",
             )
+            logger.info("workflow_finished", outcome=outcome)
         except Exception as exc:
+            logger.exception("workflow_failed", error_type=type(exc).__name__)
             with suppress(RunConflictError):
                 await self.store.transition(
                     run_id,
@@ -188,6 +198,52 @@ class RunService:
                 "run.failed",
                 data={"error_type": type(exc).__name__, "message": str(exc)},
                 idempotency_key="run.terminal",
+            )
+        finally:
+            clear_contextvars()
+
+    async def _emit_derived_events(
+        self,
+        run_id: str,
+        node: str,
+        update: Any,
+        parent_sequence: int,
+    ) -> None:
+        public = _public_update(update)
+        for index, decision in enumerate(public.get("model_decisions", [])):
+            await self.store.append_event(
+                run_id,
+                "model.completed",
+                node=node,
+                data=decision,
+                idempotency_key=f"derived:{parent_sequence}:model:{index}",
+            )
+        if "context" in public:
+            context = public["context"]
+            await self.store.append_event(
+                run_id,
+                "tool.completed",
+                node=node,
+                data={"tool": "repository_context", "summary": context.get("summary", "")},
+                idempotency_key=f"derived:{parent_sequence}:context",
+            )
+        if "change_set" in public:
+            change_set = public["change_set"]
+            await self.store.append_event(
+                run_id,
+                "tool.completed",
+                node=node,
+                data={"tool": "write_file", **change_set},
+                idempotency_key=f"derived:{parent_sequence}:changes",
+            )
+        if "validation" in public:
+            validation = public["validation"]
+            await self.store.append_event(
+                run_id,
+                "tool.completed",
+                node=node,
+                data={"tool": "execute", **validation},
+                idempotency_key=f"derived:{parent_sequence}:validation",
             )
 
     async def _handle_task_event(self, run_id: str, chunk: dict[str, Any]) -> None:

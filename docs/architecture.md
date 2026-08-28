@@ -31,7 +31,7 @@ flowchart LR
 | Nodes | One engineering responsibility and typed state update | Cross-run persistence plumbing |
 | Model gateway | Provider construction, structured output, usage normalization, routing | Workflow sequencing |
 | Repository tools | Canonical paths, capabilities, bounded reads/writes/commands | Choosing what engineering change to make |
-| Persistence | Checkpoints, run projections, append-only events, artifacts | Business routing |
+| Persistence | Checkpoints, run projections, append-only events | Business routing |
 | Observability | Correlated logs, traces, timings, usage | Authoritative workflow state |
 
 ## Workflow
@@ -78,7 +78,7 @@ The graph uses a versioned `WorkflowState` schema. Nodes return partial updates 
 | Model decisions and usage | model gateway | Append-only bounded summaries |
 | Errors and terminal outcome | node wrapper/report node | Bounded errors; outcome set once |
 
-Large file contents, patches, command output, and reports are stored as artifacts. Checkpoint state contains identifiers, hashes, excerpts, and metadata. This limits serialization cost and avoids copying growing payloads at every graph superstep.
+Repository context stores file metadata and hashes rather than a full source snapshot. Proposed file contents remain in the checkpoint because they are needed to resume hash-guarded writes, but the API redacts those contents and exposes byte counts instead. Validation output is bounded before entering state. A separate artifact store is intentionally deferred until the project needs long-term retention of full logs or patches.
 
 ## Execution lifecycle
 
@@ -120,7 +120,7 @@ sequenceDiagram
 
 LangGraph checkpoints are authoritative for graph position and workflow state. The run store is a query-optimized projection for API status, timestamps, ownership, and terminal outcome. The event store is append-only and provides monotonic sequence numbers for replayable SSE. Artifacts hold bulky output.
 
-Local mode uses SQLite. Production mode uses PostgreSQL for all three concerns while retaining their logical separation. The run ID is also the LangGraph `thread_id`. Approval resumes the same thread with `Command(resume=...)`. Run status transitions use compare-and-set semantics so duplicate approvals or competing workers cannot resume a graph twice.
+Local mode uses async SQLite adapters. Production mode uses PostgreSQL implementations for LangGraph checkpoints, run projections, and the event log while retaining their logical separation. PostgreSQL event sequences are allocated under a transaction-scoped advisory lock; lifecycle transitions remain compare-and-set operations. The run ID is also the LangGraph `thread_id`. Approval resumes the same thread with `Command(resume=...)`, so duplicate approvals or competing workers cannot resume a graph twice.
 
 Node side effects must be idempotent. A write records the expected previous hash and uses an atomic replacement. Command executions have attempt IDs. Event publication accepts a node/attempt idempotency key. A process crash therefore resumes from the last durable superstep without silently multiplying side effects.
 
@@ -152,11 +152,11 @@ The graph emits typed internal events. The application service normalizes them i
 
 ## Failure recovery
 
-Validation is deterministic: exit code, timeout, and configured required commands determine pass or fail. A failed result enters diagnosis, then repair, then validation. The retry counter increments once per repair attempt and cannot exceed the policy snapshot. Exhaustion routes to a terminal `failed` report that records the original failure, each attempted repair, the final output artifact, and why execution stopped. Unexpected node exceptions are classified as transient or terminal; only explicitly transient operations receive bounded infrastructure retries.
+Validation is deterministic: exit code, timeout, output truncation, and configured required commands determine pass or fail. A failed result enters diagnosis, then repair, then validation. The retry counter increments once per repair attempt and cannot exceed the policy snapshot. Exhaustion routes to a terminal `failed` report with the bounded final validation summary and stop reason. Unexpected node exceptions fail the run visibly and emit a typed error event; infrastructure retry classification is a future worker concern.
 
 ## Observability
 
-Structured application logs include run ID, graph node, attempt, event sequence, duration, and error class. The model gateway records provider/model, latency, input/output tokens when reported, and estimated usage when configured. LangSmith tracing is opt-in and complements rather than replaces application logs and state. Secrets, full source files, and raw prompts are excluded or redacted by default.
+Structured JSON logs bind request IDs at the HTTP boundary and run IDs around graph execution. Node start/completion/failure, normalized model decisions, repository operations, latency, token usage when reported, and terminal errors are also durable public events. LangSmith tracing is opt-in through configuration and complements rather than replaces application logs and state. Secrets and full proposed file contents are excluded from public events.
 
 ## Deployment model
 
@@ -166,6 +166,6 @@ Local development runs API, worker, and SQLite in one process, plus the Vite fro
 
 - **Custom API over LangGraph Agent Server:** demonstrates and controls the application lifecycle, event schema, and security boundary; requires more persistence plumbing.
 - **SSE over WebSockets:** simpler replay and operations for one-way progress; interactive token-by-token bidirectional sessions are out of scope.
-- **Artifacts outside graph state:** lower checkpoint growth and safer API projections; artifact availability becomes part of backup and retention design.
+- **Bounded payloads before an artifact store:** fewer moving parts and complete durable resume today; very large patch/log retention will require an object-store-backed artifact boundary later.
 - **In-process local worker first:** excellent developer experience and deterministic tests; horizontal execution requires the documented lease/worker evolution.
 - **Allowlisted host processes:** practical for trusted development; hostile repositories require external isolation.

@@ -105,7 +105,11 @@ export function App() {
                 }
               />
             </div>
-            <NodeInspector nodeId={workflow.selectedNode} state={selected} />
+            <NodeInspector
+              nodeId={workflow.selectedNode}
+              state={selected}
+              events={workflow.events}
+            />
           </section>
 
           {run.final_report && (

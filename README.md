@@ -8,7 +8,7 @@ TaskPilot AI turns a repository-scoped engineering request into an observable, r
 
 ## Project status
 
-TaskPilot AI is under active construction. The core workflow, durable approval, API, SSE, CLI, and graph-first web interface are implemented and tested. Deployment packaging remains in progress; see the [roadmap](#roadmap).
+TaskPilot AI is under active construction. The complete local product path is implemented and tested: workflow, approval, persistence, API/SSE, CLI, graph-first web interface, structured telemetry, PostgreSQL adapters, Docker packaging, and a no-key sample scenario. Release hardening remains in progress; see the [roadmap](#roadmap).
 
 ## Why this exists
 
@@ -16,9 +16,8 @@ Coding agents are useful, but unconstrained model/tool loops are difficult to op
 
 ## Capabilities
 
-- **Implemented:** typed LangGraph workflow, parallel analysis, conditional repair loops, retry exhaustion, constrained repository operations, provider-neutral structured models, explicit routing, native human interrupts, durable SQLite checkpoints, restart-safe resume, lifecycle API, replayable SSE, deterministic no-key model, installable CLI, repeatable evaluation scenarios, and a responsive graph-first React interface.
-- **Next:** structured observability, PostgreSQL support, Docker packaging, and a runnable sample repository.
-- **Planned:** CI, security hardening, and release documentation.
+- **Implemented:** typed LangGraph workflow, parallel analysis, conditional repair loops, retry exhaustion, constrained repository operations, provider-neutral structured models, explicit routing, native human interrupts, SQLite/PostgreSQL persistence, restart-safe resume, lifecycle API, replayable SSE, structured logs, model/tool telemetry, installable CLI, repeatable evaluations, responsive graph-first UI, Docker Compose, and a runnable sample API.
+- **Next:** CI, security hardening, and release documentation.
 
 ## Architecture
 
@@ -58,17 +57,26 @@ See [Architecture](docs/architecture.md) for boundaries, state ownership, execut
 
 ## Quick start
 
-Executable setup instructions will land with the graph and API milestones. The intended local experience is:
+The fastest no-key path starts the PostgreSQL-backed API and web interface:
+
+```bash
+docker compose up --build
+```
+
+Open `http://localhost:5173` and run the prefilled pagination task against `/opt/taskpilot/examples/sample-api`. The deterministic demo is deliberately scoped to that bundled task; set `TASKPILOT_DEMO_MODE=false` and configure provider assignments for general engineering requests.
+
+For direct development:
 
 ```bash
 cp .env.example .env
 uv sync --all-extras
-uv run taskpilot-api
+uv run taskpilot-api                         # terminal 1
+pnpm install && pnpm --filter @taskpilot/web dev  # terminal 2
 uv run taskpilot run --repo ./examples/sample-api \
   --task "Add pagination to the products endpoint and update tests"
 ```
 
-The no-key demo model will exercise success, repair, rejection, resume, and retry-exhaustion scenarios without pretending to be a production model.
+The deterministic test harness separately exercises success, repair, rejection, restart/resume, and retry exhaustion without paid model calls.
 
 ## CLI
 
@@ -119,14 +127,14 @@ Events are persisted before publication. Reconnecting clients can replay missed 
 
 ## Web interface
 
-The React application treats the workflow graph as the primary control surface. It streams run events, shows each node's status, exposes model and validation metadata in an inspector, and presents approval or rejection controls when the graph pauses.
+The React application treats the workflow graph as the primary control surface. It streams run events, shows each node's status, exposes model, token, tool, validation, and timing metadata in an inspector, and presents approval or rejection controls when the graph pauses.
 
 ```bash
 pnpm install
 pnpm --filter @taskpilot/web dev
 ```
 
-Set `VITE_API_URL` when the lifecycle API is not available at `http://localhost:8000`.
+Set `VITE_TASKPILOT_API_URL` to the API base when the Vite development proxy is not used.
 
 ## Configuration
 
@@ -134,7 +142,7 @@ Configuration is environment-driven with an optional YAML policy file. See [.env
 
 ## Security model
 
-TaskPilot AI is a developer tool, not a secure sandbox for hostile repositories. Its default tool layer will enforce configured repository roots, canonical path checks, symlink and traversal defenses, command allowlists, timeouts, output limits, and separate read/write/execute permissions. Strong isolation requires running workers in disposable containers or VMs.
+TaskPilot AI is a developer tool, not a secure sandbox for hostile repositories. Its default tool layer enforces configured repository roots, canonical path checks, symlink and traversal defenses, command allowlists, timeouts, output limits, and separate read/write/execute permissions. Strong isolation requires running workers in disposable containers or VMs.
 
 ## Documentation
 
@@ -165,7 +173,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for workflow and commit conventions.
 
 ## Limitations
 
-- The graph, API application factory, CLI, and web interface are implemented; the packaged API runtime entry point is not yet available.
+- Demo mode intentionally supports the bundled product-pagination task; use a configured model provider for arbitrary tasks.
 - The initial runtime targets one trusted developer per installation, not multi-tenant isolation.
 - Repository commands are processes on the host unless an external sandbox is configured.
 - Provider behavior and structured-output quality vary; capability checks and fallbacks cannot eliminate that variance.

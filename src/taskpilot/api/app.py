@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import AbstractAsyncContextManager
+from uuid import uuid4
 
+import structlog
 from fastapi import FastAPI, Header, HTTPException, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response, StreamingResponse
+from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from taskpilot.api.schemas import ApprovalRequestBody, CreateRunRequest
 from taskpilot.application.runs import RunService
@@ -20,14 +25,45 @@ from taskpilot.persistence.runs import (
 )
 from taskpilot.tools.errors import RepositoryToolError
 
+Lifespan = Callable[[FastAPI], AbstractAsyncContextManager[None]]
 
-def create_app(service: RunService) -> FastAPI:
+
+def create_app(service: RunService | None = None, *, lifespan: Lifespan | None = None) -> FastAPI:
     app = FastAPI(
         title="TaskPilot AI API",
         version="0.1.0",
         description="Lifecycle API for durable software-engineering workflows.",
+        lifespan=lifespan,
     )
-    app.state.run_service = service
+    if service is not None:
+        app.state.run_service = service
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    @app.middleware("http")
+    async def request_context(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        request_id = request.headers.get("X-Request-ID", str(uuid4()))
+        clear_contextvars()
+        bind_contextvars(request_id=request_id)
+        logger = structlog.get_logger(__name__)
+        logger.info("request_started", method=request.method, path=request.url.path)
+        try:
+            response = await call_next(request)
+            response.headers["X-Request-ID"] = request_id
+            logger.info("request_finished", status_code=response.status_code)
+            return response
+        except Exception:
+            logger.exception("request_failed")
+            raise
+        finally:
+            clear_contextvars()
 
     @app.get("/health")
     async def health() -> dict[str, str]:

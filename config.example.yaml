@@ -1,21 +1,31 @@
 models:
   default:
-    provider: demo
-    model: deterministic-v1
+    provider: openai
+    model: gpt-5-mini
+    api_key_env: OPENAI_API_KEY
   planner:
     provider: openai
     model: gpt-5-mini
+    api_key_env: OPENAI_API_KEY
   coder:
-    provider: openai-compatible
+    provider: local
     model: local-coder
     base_url: http://localhost:11434/v1
+    local: true
   reviewer:
     provider: anthropic
     model: claude-sonnet
+    api_key_env: ANTHROPIC_API_KEY
 
 routing:
-  enabled: true
-  fallback_role: default
+  assignments:
+    context: default
+    analyst: default
+    planner: planner
+    architect: planner
+    coder: coder
+    reviewer: reviewer
+    reporter: default
 
 repository:
   allowed_roots:
@@ -27,6 +37,7 @@ repository:
   command_timeout_seconds: 120
   max_command_output_bytes: 1048576
   allowed_commands:
+    - [python, -m, pytest]
     - [pytest]
     - [ruff, check]
     - [ruff, format, --check]

@@ -10,6 +10,8 @@ const EVENT_TYPES = [
   'node.started',
   'node.completed',
   'node.failed',
+  'model.completed',
+  'tool.completed',
   'approval.required',
   'approval.decided',
   'run.completed',

@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: taskpilot
+      POSTGRES_USER: taskpilot
+      POSTGRES_PASSWORD: taskpilot-local-only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskpilot -d taskpilot"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - taskpilot-postgres:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      TASKPILOT_ENVIRONMENT: docker
+      TASKPILOT_HOST: 0.0.0.0
+      TASKPILOT_DATABASE_URL: postgresql://taskpilot:taskpilot-local-only@postgres:5432/taskpilot
+      TASKPILOT_CHECKPOINT_URL: postgresql://taskpilot:taskpilot-local-only@postgres:5432/taskpilot
+      TASKPILOT_ALLOWED_REPOSITORY_ROOTS: /opt/taskpilot/examples
+      TASKPILOT_POLICY_FILE: /opt/taskpilot/config.example.yaml
+      TASKPILOT_DEMO_MODE: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    depends_on:
+      - api
+    ports:
+      - "5173:80"
+
+volumes:
+  taskpilot-postgres:
