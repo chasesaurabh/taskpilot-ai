@@ -1,0 +1,178 @@
+from __future__ import annotations
+
+import hashlib
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from taskpilot.tools.errors import (
+    CapabilityDeniedError,
+    CommandDeniedError,
+    FileConflictError,
+    FileLimitError,
+    RepositoryBoundaryError,
+    RepositoryToolError,
+)
+from taskpilot.tools.repository import RepositoryWorkspace
+from taskpilot.tools.types import RepositoryToolPolicy
+
+
+def _policy(root: Path, **overrides: object) -> RepositoryToolPolicy:
+    return RepositoryToolPolicy(allowed_roots=(root,), **overrides)
+
+
+def test_repository_must_be_inside_an_allowed_root(tmp_path: Path) -> None:
+    allowed = tmp_path / "allowed"
+    repository = tmp_path / "elsewhere" / "repo"
+    allowed.mkdir()
+    repository.mkdir(parents=True)
+
+    with pytest.raises(RepositoryBoundaryError, match="outside"):
+        RepositoryWorkspace(repository, _policy(allowed))
+
+
+def test_read_list_and_search_are_bounded(tmp_path: Path) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    (repository / "app.py").write_text("def health():\n    return 'healthy'\n", encoding="utf-8")
+    (repository / "large.txt").write_text("x" * 100, encoding="utf-8")
+    (repository / ".git").mkdir()
+    (repository / ".git" / "ignored").write_text("secret", encoding="utf-8")
+    workspace = RepositoryWorkspace(repository, _policy(tmp_path, max_file_bytes=64))
+
+    assert [entry.path for entry in workspace.list_files()] == ["app.py", "large.txt"]
+    content = workspace.read_file("app.py")
+    assert content.sha256 == hashlib.sha256(content.content.encode()).hexdigest()
+    assert [(match.path, match.line) for match in workspace.search_code("HEALTH")] == [
+        ("app.py", 1),
+        ("app.py", 2),
+    ]
+    with pytest.raises(FileLimitError):
+        workspace.read_file("large.txt")
+
+
+def test_paths_cannot_escape_repository(tmp_path: Path) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("private", encoding="utf-8")
+    workspace = RepositoryWorkspace(repository, _policy(tmp_path))
+
+    with pytest.raises(RepositoryBoundaryError, match="escapes"):
+        workspace.read_file("../outside.txt")
+    with pytest.raises(RepositoryBoundaryError, match="Absolute"):
+        workspace.read_file(str(outside.resolve()))
+
+
+def test_write_requires_capability_and_matching_precondition(tmp_path: Path) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    target = repository / "app.py"
+    target.write_bytes(b"old\n")
+    read_only = RepositoryWorkspace(repository, _policy(tmp_path))
+
+    with pytest.raises(CapabilityDeniedError):
+        read_only.write_file("app.py", "new\n")
+
+    writable = RepositoryWorkspace(repository, _policy(tmp_path, allow_writes=True))
+    with pytest.raises(FileConflictError):
+        writable.write_file("app.py", "new\n", expected_sha256="stale")
+
+    previous_hash = hashlib.sha256(b"old\n").hexdigest()
+    result = writable.write_file("app.py", "new\n", expected_sha256=previous_hash)
+
+    assert result.previous_sha256 == previous_hash
+    assert target.read_text(encoding="utf-8") == "new\n"
+
+
+def test_new_file_requires_explicit_absence_precondition(tmp_path: Path) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    workspace = RepositoryWorkspace(repository, _policy(tmp_path, allow_writes=True))
+
+    result = workspace.write_file("new.py", "value = 1\n", expected_sha256=None)
+
+    assert result.created is True
+    with pytest.raises(FileConflictError):
+        workspace.write_file("new.py", "value = 2\n", expected_sha256=None)
+
+
+def test_commands_require_capability_and_argument_prefix(tmp_path: Path) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    disabled = RepositoryWorkspace(
+        repository,
+        _policy(tmp_path, allowed_commands=(("git", "--version"),)),
+    )
+    with pytest.raises(CapabilityDeniedError):
+        disabled.execute(("git", "--version"))
+
+    enabled = RepositoryWorkspace(
+        repository,
+        _policy(
+            tmp_path,
+            allow_commands=True,
+            allowed_commands=(("git", "--version"),),
+        ),
+    )
+    with pytest.raises(CommandDeniedError):
+        enabled.execute(("git", "status"))
+    with pytest.raises(CommandDeniedError, match="paths"):
+        enabled.execute((str(Path(subprocess.__file__)),))
+
+    result = enabled.execute(("git", "--version"))
+    assert result.exit_code == 0
+    assert result.output.startswith("git version")
+
+
+def test_fixed_git_inspection_does_not_require_execute_capability(tmp_path: Path) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    subprocess.run(("git", "init", "--quiet"), cwd=repository, check=True)
+    (repository / "new.txt").write_text("new", encoding="utf-8")
+    workspace = RepositoryWorkspace(repository, _policy(tmp_path))
+
+    result = workspace.git_status()
+
+    assert result.exit_code == 0
+    assert "?? new.txt" in result.output
+
+
+def test_command_timeout_and_output_limit_are_enforced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    executable_name = Path(sys.executable).name
+    monkeypatch.setenv("PATH", str(Path(sys.executable).parent))
+    workspace = RepositoryWorkspace(
+        repository,
+        _policy(
+            tmp_path,
+            allow_commands=True,
+            allowed_commands=((executable_name, "-c"),),
+            command_timeout_seconds=0.1,
+            max_command_output_bytes=128,
+        ),
+    )
+
+    oversized = workspace.execute((executable_name, "-c", "print('x' * 10000)"))
+    timed_out = workspace.execute(
+        (executable_name, "-c", "import time; time.sleep(1)"),
+    )
+
+    assert oversized.output_truncated is True
+    assert len(oversized.output.encode()) <= 128
+    assert timed_out.timed_out is True
+    assert timed_out.exit_code is None
+
+
+def test_invalid_regex_is_reported_as_tool_error(tmp_path: Path) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    workspace = RepositoryWorkspace(repository, _policy(tmp_path))
+
+    with pytest.raises(RepositoryToolError, match="Invalid search expression"):
+        workspace.search_code("(", use_regex=True)
