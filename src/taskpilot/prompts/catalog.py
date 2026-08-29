@@ -31,8 +31,10 @@ TASK_ANALYSIS_PROMPT = _prompt(
 
 PLANNING_PROMPT = _prompt(
     "implementation-plan",
-    "Create a minimal, testable implementation plan. Do not claim that changes are already made.",
-    "Task analysis:\n{analysis}\n\nRepository context:\n{context}",
+    "Create a minimal, testable implementation plan. Select validation commands only from the "
+    "configured allowlist. Do not claim that changes are already made.",
+    "Task analysis:\n{analysis}\n\nRepository context:\n{context}\n\nConfigured validation "
+    "command prefixes:\n{allowed_commands}",
 )
 
 ARCHITECTURE_PROMPT = _prompt(

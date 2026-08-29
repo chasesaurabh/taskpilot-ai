@@ -59,6 +59,7 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
   "scenario: repeatable end-to-end evaluation scenario",
+  "live: opt-in integration test that invokes a configured model provider",
   "postgres: integration test requiring TASKPILOT_TEST_POSTGRES_URL",
 ]
 

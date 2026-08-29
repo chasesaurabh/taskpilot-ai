@@ -188,7 +188,9 @@ TaskPilot AI is a developer tool, not a secure sandbox for hostile repositories.
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [LangGraph and LangChain design](docs/langgraph-design.md)
 - [Evaluation scenarios](docs/evaluations.md)
+- [Live-model validation](docs/live-model-validation.md)
 - [Why LangGraph](docs/adr/001-why-langgraph.md)
 - [State and checkpoint design](docs/adr/002-state-and-checkpoint-design.md)
 - [Human-in-the-loop policy](docs/adr/003-human-in-the-loop-policy.md)

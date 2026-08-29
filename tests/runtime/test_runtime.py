@@ -78,6 +78,48 @@ def test_packaged_runtime_executes_the_no_key_pagination_demo(tmp_path: Path) ->
     assert "limit: int" in source
 
 
+def test_packaged_runtime_resumes_after_application_restart(tmp_path: Path) -> None:
+    repository = tmp_path / "sample-api"
+    shutil.copytree(PROJECT_ROOT / "examples" / "sample-api", repository)
+    settings = AppSettings(
+        allowed_repository_roots=str(tmp_path),
+        policy_file=PROJECT_ROOT / "config.example.yaml",
+        database_url=f"sqlite+aiosqlite:///{tmp_path / 'runs.db'}",
+        checkpoint_url=str(tmp_path / "checkpoints.db"),
+        demo_mode=True,
+    )
+
+    with TestClient(create_runtime_app(settings)) as first_process:
+        created = first_process.post(
+            "/runs",
+            json={
+                "repository": str(repository),
+                "task": "Add pagination to the products endpoint and update tests",
+            },
+        )
+        run_id = created.json()["run_id"]
+        _wait_for_status(first_process, run_id, "waiting_for_approval")
+        assert "offset: int" not in (repository / "sample_api" / "app.py").read_text(
+            encoding="utf-8"
+        )
+
+    with TestClient(create_runtime_app(settings)) as restarted_process:
+        waiting = restarted_process.get(f"/runs/{run_id}")
+        assert waiting.json()["status"] == "waiting_for_approval"
+        approved = restarted_process.post(
+            f"/runs/{run_id}/approve",
+            json={"actor": "restart-test@example.com"},
+        )
+        assert approved.status_code == 202
+        completed = _wait_for_status(restarted_process, run_id, "completed")
+        events = restarted_process.get(f"/runs/{run_id}/events").text
+
+    assert completed["final_report"] is not None
+    assert events.count("event: run.started") == 1
+    assert events.count("event: run.resumed") == 1
+    assert "offset: int" in (repository / "sample_api" / "app.py").read_text(encoding="utf-8")
+
+
 def _wait_for_status(
     client: TestClient,
     run_id: str,

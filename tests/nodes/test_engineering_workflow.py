@@ -14,6 +14,7 @@ from taskpilot.domain.models import (
     AnalysisReport,
     FailureDiagnosis,
     FinalReport,
+    Finding,
     ImplementationPlan,
     ImplementationProposal,
     PlanStep,
@@ -32,7 +33,13 @@ from taskpilot.nodes import EngineeringNodes
 from taskpilot.tools.types import RepositoryToolPolicy
 
 
-def _gateway(*, repair_content: str = "good\n") -> ModelGateway:
+def _gateway(
+    *,
+    repair_content: str = "good\n",
+    blocking_review_once: bool = False,
+) -> ModelGateway:
+    review_calls = 0
+
     def proposal(prompt: str) -> ImplementationProposal:
         content = repair_content if "Failure diagnosis" in prompt else "bad\n"
         return ImplementationProposal(
@@ -45,6 +52,23 @@ def _gateway(*, repair_content: str = "good\n") -> ModelGateway:
                 ),
             ),
         )
+
+    def review(_: str) -> ReviewResult:
+        nonlocal review_calls
+        review_calls += 1
+        if blocking_review_once and review_calls == 1:
+            return ReviewResult(
+                summary="A blocking issue remains",
+                blocking=True,
+                findings=(
+                    Finding(
+                        title="Normalize output",
+                        detail="Ensure the stored value remains normalized",
+                        severity="blocking",
+                    ),
+                ),
+            )
+        return ReviewResult(summary="Diff accepted", blocking=False)
 
     handlers = {
         TaskAnalysis: lambda _: TaskAnalysis(objective="Update value", risk_level="low"),
@@ -69,7 +93,7 @@ def _gateway(*, repair_content: str = "good\n") -> ModelGateway:
             likely_causes=("bad fixture value",),
             repair_strategy=("write good",),
         ),
-        ReviewResult: lambda _: ReviewResult(summary="Diff accepted", blocking=False),
+        ReviewResult: review,
         FinalReport: lambda _: FinalReport(
             outcome=RunStatus.COMPLETED,
             summary="Value updated and validation passed",
@@ -90,6 +114,7 @@ def _graph(
     repository: Path,
     *,
     repair_content: str = "good\n",
+    blocking_review_once: bool = False,
     checkpointer: Any | None = None,
 ):
     repository_policy = RepositoryToolPolicy(
@@ -100,7 +125,11 @@ def _graph(
         command_timeout_seconds=5,
     )
     nodes = EngineeringNodes(
-        models=_gateway(repair_content=repair_content), repository_policy=repository_policy
+        models=_gateway(
+            repair_content=repair_content,
+            blocking_review_once=blocking_review_once,
+        ),
+        repository_policy=repository_policy,
     )
     return build_workflow(nodes.as_workflow_nodes(), checkpointer=checkpointer)
 
@@ -161,6 +190,32 @@ def test_real_nodes_stop_safely_when_repairs_never_pass(
     assert result["final_report"].outcome == RunStatus.FAILED
     assert "exhausted" in (result["final_report"].stop_reason or "")
     assert "code_review" not in [record.node for record in result["node_history"]]
+
+
+def test_blocking_review_drives_a_focused_repair_without_stale_validation_diagnosis(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = _repository(tmp_path)
+    monkeypatch.setenv(
+        "PATH", f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}"
+    )
+    graph = _graph(repository, blocking_review_once=True)
+
+    result = graph.invoke(
+        create_initial_state(
+            run_id="review-repair",
+            task="Set the value to good and resolve blocking review findings",
+            repository_root=str(repository),
+            policy=WorkflowPolicy(require_plan_approval=False, max_repair_attempts=3),
+        )
+    )
+
+    history = [record.node for record in result["node_history"]]
+    assert history.count("code_review") == 2
+    assert history[-5:] == ["code_review", "repair", "testing", "code_review", "final_report"]
+    assert result["repair_attempts"] == 2
+    assert result["final_report"].outcome == RunStatus.COMPLETED
 
 
 def test_real_approval_interrupt_discloses_plan_and_blocks_writes(

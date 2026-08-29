@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from threading import Barrier
 
 from taskpilot.domain.models import (
     AnalysisReport,
@@ -28,7 +29,12 @@ def _record(node: str, **updates: object) -> WorkflowUpdate:
     )
 
 
-def _nodes(*, test_results: list[bool], approved: bool = True) -> WorkflowNodes:
+def _nodes(
+    *,
+    test_results: list[bool],
+    approved: bool = True,
+    parallel_barrier: Barrier | None = None,
+) -> WorkflowNodes:
     remaining_results = iter(test_results)
 
     def context(_: WorkflowState) -> WorkflowUpdate:
@@ -49,12 +55,16 @@ def _nodes(*, test_results: list[bool], approved: bool = True) -> WorkflowNodes:
         )
 
     def architecture(_: WorkflowState) -> WorkflowUpdate:
+        if parallel_barrier is not None:
+            parallel_barrier.wait(timeout=2)
         return _record(
             "architecture_review",
             architecture_report=AnalysisReport(summary="Architecture remains coherent"),
         )
 
     def repository(_: WorkflowState) -> WorkflowUpdate:
+        if parallel_barrier is not None:
+            parallel_barrier.wait(timeout=2)
         return _record(
             "repository_analysis",
             repository_report=AnalysisReport(summary="One component is affected"),
@@ -113,7 +123,7 @@ def _nodes(*, test_results: list[bool], approved: bool = True) -> WorkflowNodes:
 
 
 def test_graph_runs_parallel_analysis_and_success_path() -> None:
-    graph = build_workflow(_nodes(test_results=[True]))
+    graph = build_workflow(_nodes(test_results=[True], parallel_barrier=Barrier(2)))
 
     result = graph.invoke(
         create_initial_state(run_id="run-1", task="Add pagination", repository_root="repo")

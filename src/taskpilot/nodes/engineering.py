@@ -176,6 +176,9 @@ class EngineeringNodes:
 
     def planning(self, state: WorkflowState) -> WorkflowUpdate:
         workspace = self._workspace(state)
+        allowed_commands = "\n".join(
+            "- " + " ".join(command) for command in self._repository_policy.allowed_commands
+        )
         call = self._models.invoke_structured(
             role=ModelRole.PLANNER,
             routing_context=self._routing_context(state),
@@ -183,6 +186,7 @@ class EngineeringNodes:
             variables={
                 "analysis": state["task_analysis"].model_dump_json(indent=2),
                 "context": self._context_text(workspace),
+                "allowed_commands": allowed_commands or "No validation commands are configured.",
             },
             output_schema=ImplementationPlan,
         )
@@ -358,6 +362,7 @@ class EngineeringNodes:
     def repair(self, state: WorkflowState) -> WorkflowUpdate:
         workspace = self._workspace(state)
         context, expected_hashes = self._proposal_context(workspace)
+        diagnosis = _repair_diagnosis(state)
         call = self._models.invoke_structured(
             role=ModelRole.CODER,
             routing_context=self._routing_context(state),
@@ -365,7 +370,7 @@ class EngineeringNodes:
             variables={
                 "plan": state["plan"].model_dump_json(indent=2),
                 "context": context,
-                "diagnosis": state["diagnosis"].model_dump_json(indent=2),
+                "diagnosis": diagnosis.model_dump_json(indent=2),
             },
             output_schema=ImplementationProposal,
         )
@@ -544,3 +549,19 @@ def _state_summary(
     if stop_reason:
         parts.append(f"stop_reason={stop_reason}")
     return "\n".join(parts)
+
+
+def _repair_diagnosis(state: WorkflowState) -> FailureDiagnosis:
+    review = state.get("review")
+    if review is not None and review.blocking:
+        return FailureDiagnosis(
+            summary="Code review reported blocking findings",
+            likely_causes=tuple(finding.detail for finding in review.findings),
+            repair_strategy=tuple(
+                f"Resolve {finding.title}: {finding.detail}" for finding in review.findings
+            ),
+        )
+    diagnosis = state.get("diagnosis")
+    if diagnosis is None:
+        raise RepositoryToolError("Repair was requested without a validation or review diagnosis")
+    return diagnosis

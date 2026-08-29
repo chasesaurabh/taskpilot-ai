@@ -1,0 +1,37 @@
+models:
+  primary:
+    provider: openai
+    model: gpt-5-mini
+    api_key_env: OPENAI_API_KEY
+    temperature: 0
+    timeout_seconds: 180
+
+routing:
+  assignments:
+    analyst: primary
+    planner: primary
+    architect: primary
+    coder: primary
+    reviewer: primary
+    reporter: primary
+
+repository:
+  allowed_roots:
+    - ./examples
+  max_file_bytes: 262144
+  max_context_bytes: 1048576
+  allow_writes: true
+  allow_commands: true
+  command_timeout_seconds: 120
+  max_command_output_bytes: 1048576
+  allowed_commands:
+    - [python, -m, pytest]
+    - [python.exe, -m, pytest]
+
+workflow:
+  max_repair_attempts: 2
+  require_plan_approval: true
+
+observability:
+  langsmith_enabled: false
+  log_level: INFO

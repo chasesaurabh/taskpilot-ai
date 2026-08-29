@@ -28,3 +28,34 @@ uv run pytest tests/runtime/test_runtime.py
 ```
 
 It copies the bundled sample repository, starts the lifespan-managed SQLite runtime, waits for the real LangGraph interrupt, approves the run over HTTP, applies pagination, executes the sample tests as a subprocess, and asserts model/tool telemetry plus event redaction. PostgreSQL parity is covered by `tests/persistence/test_postgres_store.py` when `TASKPILOT_TEST_POSTGRES_URL` is set; CI supplies a disposable PostgreSQL service automatically.
+
+## Headline repair-loop evaluation
+
+`test_real_nodes_apply_repair_retest_review_and_report` uses the production graph and
+`RepositoryWorkspace`, not fabricated events. Its first implementation writes a value that causes
+the allowlisted validation subprocess to fail. The observed path is:
+
+```text
+implementation → testing (failed) → failure_analysis → repair → testing (passed)
+→ code_review → final_report
+```
+
+The test asserts the actual repository content, validation outcome, repair count, model decisions,
+and terminal report. A second case proves retry exhaustion, and a third proves that blocking review
+findings can drive a new repair without reusing a stale validation diagnosis.
+
+## Durable application restart
+
+`test_packaged_runtime_resumes_after_application_restart` starts the packaged API, reaches the native
+approval interrupt, closes the entire application lifespan, opens a new application against the same
+SQLite run and checkpoint databases, approves the original run ID, and completes it. It asserts one
+`run.started`, one `run.resumed`, and no repository write before approval.
+
+SQLite is the one-process local adapter. PostgreSQL provides the same logical checkpoint and run/event
+contracts and safer database concurrency, but live SSE notifications remain process-local in v0.1.0.
+Neither mode claims exactly-once side effects for a crash inside a write/command node.
+
+## Live-provider evaluation
+
+See [Live-model validation](live-model-validation.md). Two opt-in scenarios execute the complete API
+and graph using the configured LangChain provider; they are always skipped in ordinary CI.
