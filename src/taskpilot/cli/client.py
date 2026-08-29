@@ -51,16 +51,20 @@ class TaskPilotClient:
         task: str,
         max_repair_attempts: int,
         require_approval: bool,
+        model_profile: str | None = None,
     ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "repository": repository,
+            "task": task,
+            "max_repair_attempts": max_repair_attempts,
+            "require_approval": require_approval,
+        }
+        if model_profile is not None:
+            payload["model_profile"] = model_profile
         return self._request_json(
             "POST",
             "/runs",
-            json={
-                "repository": repository,
-                "task": task,
-                "max_repair_attempts": max_repair_attempts,
-                "require_approval": require_approval,
-            },
+            json=payload,
         )
 
     def get_run(self, run_id: str) -> dict[str, Any]:

@@ -99,7 +99,11 @@ class EngineeringNodes:
             complexity = TaskComplexity.COMPLEX
         elif risk and risk.risk_level.lower() == "low":
             complexity = TaskComplexity.SIMPLE
-        return RoutingContext(complexity=complexity, repository_file_count=file_count)
+        return RoutingContext(
+            complexity=complexity,
+            repository_file_count=file_count,
+            profile=state["policy"].model_profile,
+        )
 
     @staticmethod
     def _record(node: str, detail: str = "") -> list[NodeRecord]:

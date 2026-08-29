@@ -128,9 +128,9 @@ The application captures file hashes before model invocation and supplies them t
 
 LangChain chat-model interfaces provide prompt composition, invocation, and structured output. TaskPilot adds a small `ModelGateway` around those interfaces to normalize provider construction, routing, token usage, and response errors. A configuration registry maps roles (`analyst`, `planner`, `architect`, `coder`, `reviewer`, `reporter`) to provider definitions. Repository capabilities are deliberately application-owned and are not exposed as model-selected LangChain tools.
 
-Routing is explicit policy, not hidden model selection. It can assign small/local models to context classification, coding models to change generation, and stronger reasoning models to architecture and review. Each decision is recorded with reason, provider, model, latency, and usage. This makes cost, quality, latency, and privacy tradeoffs observable.
+Routing is explicit policy, not hidden model selection. Named profiles group a complete set of role assignments and ordered routing rules. The API validates an optional profile at run creation and stores the resolved name inside `WorkflowPolicy`, so the choice is checkpointed and cannot drift when an approval resumes. Each model decision records the profile, reason, provider, model, latency, and usage. Existing single-assignment configuration is normalized into a `default` profile.
 
-The initial provider factories cover deterministic demo, OpenAI, Anthropic, and OpenAI-compatible endpoints. Local services such as vLLM or Ollama can use an OpenAI-compatible endpoint when they implement the required API behavior.
+The provider factory covers deterministic demo, OpenAI, Anthropic, and OpenAI-compatible endpoints. Local services can use the same compatible adapter when they implement the required chat and structured-output behavior. Credentials, organization identifiers, and custom header values are resolved from named environment variables. Static non-secret compatible-provider request fields may use bounded configuration fields such as `max_tokens` and `extra_body`. At startup, TaskPilot validates complete role coverage, model references, provider integration availability, required environment values, and the structured-model interface before accepting runs.
 
 ## Repository tool security
 

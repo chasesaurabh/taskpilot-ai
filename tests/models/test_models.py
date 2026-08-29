@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from taskpilot.domain.models import ImplementationProposal, ProposedFileChange, TaskAnalysis
 from taskpilot.models.config import (
     ModelConfig,
+    ModelProfile,
     ModelRole,
     ModelRoutingPolicy,
     RoutingContext,
@@ -34,22 +35,26 @@ def _policy() -> ModelRoutingPolicy:
                 local=True,
             ),
         },
-        assignments={ModelRole.ANALYST: "strong", ModelRole.CODER: "strong"},
-        rules=(
-            RoutingRule(
-                name="cheap-simple-analysis",
-                role=ModelRole.ANALYST,
-                model_key="cheap",
-                complexity=TaskComplexity.SIMPLE,
-                max_repository_files=20,
+        profiles={
+            "default": ModelProfile(
+                assignments={ModelRole.ANALYST: "strong", ModelRole.CODER: "strong"},
+                rules=(
+                    RoutingRule(
+                        name="cheap-simple-analysis",
+                        role=ModelRole.ANALYST,
+                        model_key="cheap",
+                        complexity=TaskComplexity.SIMPLE,
+                        max_repository_files=20,
+                    ),
+                    RoutingRule(
+                        name="private-coding",
+                        role=ModelRole.CODER,
+                        model_key="private",
+                        privacy_required=True,
+                    ),
+                ),
             ),
-            RoutingRule(
-                name="private-coding",
-                role=ModelRole.CODER,
-                model_key="private",
-                privacy_required=True,
-            ),
-        ),
+        },
     )
 
 
@@ -75,26 +80,74 @@ def test_router_applies_visible_ordered_rules_and_defaults() -> None:
     assert private.config.local is True
 
 
+def test_router_selects_an_explicit_profile_and_rejects_unknown_profiles() -> None:
+    config = ModelConfig(provider="openai", model="balanced")
+    private = ModelConfig(
+        provider="local",
+        model="private",
+        base_url="http://local/v1",
+        local=True,
+    )
+    assignments = {role: "balanced" for role in ModelRole}
+    private_assignments = {role: "private" for role in ModelRole}
+    router = ModelRouter(
+        ModelRoutingPolicy(
+            models={"balanced": config, "private": private},
+            profiles={
+                "balanced": ModelProfile(assignments=assignments),
+                "private": ModelProfile(assignments=private_assignments),
+            },
+            default_profile="balanced",
+        )
+    )
+
+    selected = router.select(ModelRole.CODER, RoutingContext(profile="private"))
+
+    assert selected.profile == "private"
+    assert selected.key == "private"
+    with pytest.raises(ModelConfigurationError, match="Available profiles: balanced, private"):
+        router.select(ModelRole.CODER, RoutingContext(profile="missing"))
+
+
 def test_router_rejects_missing_or_non_local_private_assignment() -> None:
     router = ModelRouter(_policy())
 
-    with pytest.raises(ModelConfigurationError, match="No model assignment"):
+    with pytest.raises(ModelConfigurationError, match="has no assignment"):
         router.select(ModelRole.REPORTER, RoutingContext())
     with pytest.raises(ModelConfigurationError, match="no local model"):
         router.select(ModelRole.ANALYST, RoutingContext(privacy_required=True))
+
+
+def test_startup_validation_requires_every_role_and_structured_model_contract() -> None:
+    incomplete = ModelRouter(_policy())
+    with pytest.raises(ModelConfigurationError, match="missing"):
+        incomplete.validate_profiles()
+
+    config = ModelConfig(provider="demo", model="valid")
+    complete = ModelRouter(
+        ModelRoutingPolicy(
+            models={"valid": config},
+            profiles={"default": ModelProfile(assignments={role: "valid" for role in ModelRole})},
+        )
+    )
+    gateway = ModelGateway(complete, DeterministicModelFactory(object()))  # type: ignore[arg-type]
+    with pytest.raises(ModelConfigurationError, match="structured-output capability"):
+        gateway.validate_configuration()
 
 
 def test_routing_policy_rejects_unknown_model_keys() -> None:
     with pytest.raises(ValueError, match="Unknown routed model keys"):
         ModelRoutingPolicy(
             models={"known": ModelConfig(provider="openai", model="small")},
-            assignments={ModelRole.PLANNER: "missing"},
+            profiles={"default": ModelProfile(assignments={ModelRole.PLANNER: "missing"})},
         )
 
 
 def test_compatible_provider_requires_base_url() -> None:
     with pytest.raises(ValueError, match="requires base_url"):
         ModelConfig(provider="openai-compatible", model="coder")
+    with pytest.raises(ValueError, match="absolute HTTP"):
+        ModelConfig(provider="openai-compatible", model="coder", base_url="provider/v1")
 
 
 def test_factory_normalizes_local_provider_and_custom_key(
@@ -121,6 +174,61 @@ def test_factory_normalizes_local_provider_and_custom_key(
     assert captured["model_provider"] == "openai"
     assert captured["base_url"] == "http://local/v1"
     assert captured["api_key"] == "test-key"
+
+
+def test_factory_resolves_safe_provider_options_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def initializer(**kwargs: Any) -> object:
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setenv("COMPATIBLE_KEY", "test-key")
+    monkeypatch.setenv("COMPATIBLE_ORGANIZATION", "test-organization")
+    monkeypatch.setenv("COMPATIBLE_TENANT", "tenant-value")
+    factory = LangChainModelFactory(initializer)
+    factory.create(
+        ModelConfig(
+            provider="openai-compatible",
+            model="coder",
+            base_url="https://provider.example/v1",
+            api_key_env="COMPATIBLE_KEY",
+            organization_env="COMPATIBLE_ORGANIZATION",
+            headers_from_env={"X-Tenant": "COMPATIBLE_TENANT"},
+            max_tokens=4096,
+            extra_body={"reasoning_effort": "high"},
+        )
+    )
+
+    assert captured["model_provider"] == "openai"
+    assert captured["base_url"] == "https://provider.example/v1"
+    assert captured["organization"] == "test-organization"
+    assert captured["default_headers"] == {"X-Tenant": "tenant-value"}
+    assert captured["max_tokens"] == 4096
+    assert captured["extra_body"] == {"reasoning_effort": "high"}
+
+
+def test_model_config_rejects_unsafe_header_inputs(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(ValueError, match="Invalid HTTP header name"):
+        ModelConfig(
+            provider="openai-compatible",
+            model="coder",
+            base_url="http://provider/v1",
+            headers_from_env={"Bad Header": "HEADER_VALUE"},
+        )
+
+    monkeypatch.setenv("HEADER_VALUE", "value\r\ninjected: true")
+    with pytest.raises(ModelConfigurationError, match="invalid HTTP header value"):
+        LangChainModelFactory(lambda **_: object()).create(
+            ModelConfig(
+                provider="openai-compatible",
+                model="coder",
+                base_url="http://provider/v1",
+                headers_from_env={"X-Safe": "HEADER_VALUE"},
+            )
+        )
 
 
 def test_factory_reports_missing_provider_credentials() -> None:
@@ -163,6 +271,7 @@ def test_gateway_runs_prompt_and_structured_demo_through_same_contract() -> None
 
     assert call.output.objective == "analyze pagination"
     assert call.decision.model == "small"
+    assert call.decision.profile == "default"
     assert call.decision.input_tokens is not None
 
 

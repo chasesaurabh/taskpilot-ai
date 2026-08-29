@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from taskpilot.domain.models import ModelDecision
 from taskpilot.models.config import ModelRole, RoutingContext
-from taskpilot.models.errors import ModelResponseError
+from taskpilot.models.errors import ModelConfigurationError, ModelResponseError
 from taskpilot.models.factory import ModelFactory, StructuredChatModel
 from taskpilot.models.routing import ModelRouter
 from taskpilot.prompts.catalog import PromptSpec
@@ -30,6 +30,25 @@ class ModelGateway:
         self._router = router
         self._factory = factory
         self._models: dict[str, StructuredChatModel] = {}
+
+    def validate_configuration(self) -> None:
+        """Fail startup for incomplete profiles, missing extras, or missing secret inputs."""
+
+        self._router.validate_profiles()
+        for key, config in self._router.referenced_models.items():
+            try:
+                model = self._factory.create(config)
+            except ModelConfigurationError:
+                raise
+            except Exception as exc:
+                raise ModelConfigurationError(
+                    f"Could not validate model '{key}' using provider '{config.provider}'"
+                ) from exc
+            if not callable(getattr(model, "with_structured_output", None)):
+                raise ModelConfigurationError(
+                    f"Model '{key}' does not expose structured-output capability"
+                )
+            self._models[key] = model
 
     def invoke_structured[OutputT: BaseModel](
         self,
@@ -82,6 +101,7 @@ class ModelGateway:
             role=role,
             provider=selection.config.provider,
             model=selection.config.model,
+            profile=selection.profile,
             reason=selection.reason,
             latency_ms=latency_ms,
             input_tokens=input_tokens,

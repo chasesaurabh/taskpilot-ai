@@ -19,6 +19,11 @@ export interface RunRecord {
   status: RunStatus;
   created_at: string;
   updated_at: string;
+  policy: {
+    max_repair_attempts: number;
+    require_plan_approval: boolean;
+    model_profile?: string;
+  };
   approval?: Record<string, unknown>;
   final_report?: FinalReport;
 }

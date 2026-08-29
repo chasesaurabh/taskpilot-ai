@@ -8,23 +8,35 @@ models:
     model: gpt-5-mini
     api_key_env: OPENAI_API_KEY
   coder:
-    provider: local
-    model: local-coder
-    base_url: http://localhost:11434/v1
-    local: true
+    provider: openai-compatible
+    model: provider-coder-model
+    base_url: https://provider.example.com/v1
+    api_key_env: COMPATIBLE_API_KEY
+    max_tokens: 8192
   reviewer:
     provider: anthropic
     model: claude-sonnet
     api_key_env: ANTHROPIC_API_KEY
 
 routing:
-  assignments:
-    analyst: default
-    planner: planner
-    architect: planner
-    coder: coder
-    reviewer: reviewer
-    reporter: default
+  default_profile: balanced
+  profiles:
+    balanced:
+      assignments:
+        analyst: default
+        planner: planner
+        architect: planner
+        coder: coder
+        reviewer: reviewer
+        reporter: default
+    openai-only:
+      assignments:
+        analyst: default
+        planner: default
+        architect: default
+        coder: default
+        reviewer: default
+        reporter: default
 
 repository:
   allowed_roots:

@@ -8,8 +8,9 @@ import pytest
 from fastapi.testclient import TestClient
 from langchain_core.prompt_values import StringPromptValue
 
-from taskpilot.configuration import AppSettings, load_policy, repository_policy
+from taskpilot.configuration import AppSettings, load_policy, model_policy, repository_policy
 from taskpilot.domain.models import TaskAnalysis
+from taskpilot.models.errors import ModelConfigurationError
 from taskpilot.models.scenario import pagination_demo_model
 from taskpilot.runtime import create_runtime_app
 
@@ -25,11 +26,86 @@ def test_environment_repository_roots_override_yaml(tmp_path: Path) -> None:
     assert resolved.allowed_roots == (tmp_path.resolve(),)
 
 
+def test_policy_loads_named_profiles_and_normalizes_legacy_assignments(tmp_path: Path) -> None:
+    configured = model_policy(
+        load_policy(PROJECT_ROOT / "config.example.yaml"),
+        demo_mode=False,
+    )
+
+    assert configured.default_profile == "balanced"
+    assert set(configured.profiles) == {"balanced", "openai-only"}
+
+    legacy = tmp_path / "legacy.yaml"
+    legacy.write_text(
+        """
+models:
+  default:
+    provider: openai
+    model: legacy
+routing:
+  assignments:
+    analyst: default
+    planner: default
+    architect: default
+    coder: default
+    reviewer: default
+    reporter: default
+repository:
+  allowed_roots: [./examples]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    normalized = model_policy(load_policy(legacy), demo_mode=False)
+
+    assert normalized.default_profile == "default"
+    assert normalized.profiles["default"].assignments["coder"] == "default"
+
+
 def test_no_key_demo_rejects_tasks_it_cannot_implement_credibly() -> None:
     runnable = pagination_demo_model().with_structured_output(TaskAnalysis)
 
     with pytest.raises(ValueError, match="supports only"):
         runnable.invoke(StringPromptValue(text="Add a billing system"))
+
+
+def test_live_runtime_fails_startup_for_missing_provider_inputs(tmp_path: Path) -> None:
+    policy_file = tmp_path / "missing-key.yaml"
+    policy_file.write_text(
+        f"""
+models:
+  primary:
+    provider: openai
+    model: test-model
+    api_key_env: DEFINITELY_UNSET_TASKPILOT_KEY
+routing:
+  profiles:
+    default:
+      assignments:
+        analyst: primary
+        planner: primary
+        architect: primary
+        coder: primary
+        reviewer: primary
+        reporter: primary
+repository:
+  allowed_roots: [{tmp_path.as_posix()}]
+""".strip(),
+        encoding="utf-8",
+    )
+    settings = AppSettings(
+        allowed_repository_roots=str(tmp_path),
+        policy_file=policy_file,
+        database_url=f"sqlite+aiosqlite:///{tmp_path / 'runs.db'}",
+        checkpoint_url=str(tmp_path / "checkpoints.db"),
+        demo_mode=False,
+    )
+
+    with (
+        pytest.raises(ModelConfigurationError, match="environment variable is unset"),
+        TestClient(create_runtime_app(settings)),
+    ):
+        pass
 
 
 def test_packaged_runtime_executes_the_no_key_pagination_demo(tmp_path: Path) -> None:

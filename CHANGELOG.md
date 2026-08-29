@@ -3,6 +3,17 @@
 All notable changes to TaskPilot AI are documented in this file. The project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Named model-routing profiles selectable through the API, CLI, and web UI, persisted with durable
+  workflow policy and included in model-decision telemetry.
+- Startup validation for profile completeness, provider integrations, structured-output capability,
+  and required environment-backed credentials and headers.
+- Safe compatible-provider options for maximum tokens, organization, custom headers, and extra
+  request bodies; Docker images now include OpenAI and Anthropic integrations.
+
 ## [0.1.0] - 2026-08-29
 
 ### Added

@@ -26,7 +26,7 @@ from taskpilot.domain.models import (
     WorkflowPolicy,
 )
 from taskpilot.graph import build_workflow, create_initial_state
-from taskpilot.models.config import ModelConfig, ModelRole, ModelRoutingPolicy
+from taskpilot.models.config import ModelConfig, ModelProfile, ModelRole, ModelRoutingPolicy
 from taskpilot.models.demo import DeterministicModel, DeterministicModelFactory
 from taskpilot.models.gateway import ModelGateway
 from taskpilot.models.routing import ModelRouter
@@ -105,7 +105,7 @@ def _gateway(
     config = ModelConfig(provider="demo", model="deterministic")
     policy = ModelRoutingPolicy(
         models={"demo": config},
-        assignments={role: "demo" for role in ModelRole},
+        profiles={"default": ModelProfile(assignments={role: "demo" for role in ModelRole})},
     )
     return ModelGateway(
         ModelRouter(policy),

@@ -49,6 +49,7 @@ class LangChainModelFactory:
         }
         if provider in {"openai-compatible", "local"}:
             provider = "openai"
+        if config.base_url is not None:
             kwargs["base_url"] = config.base_url
         kwargs["model_provider"] = provider
         if config.api_key_env:
@@ -60,11 +61,39 @@ class LangChainModelFactory:
             kwargs["api_key"] = api_key
         elif config.provider == "local":
             kwargs["api_key"] = "local-not-required"
+        if config.organization_env:
+            kwargs["organization"] = _required_environment(config.organization_env)
+        if config.headers_from_env:
+            kwargs["default_headers"] = {
+                header: _required_header_value(environment_name)
+                for header, environment_name in config.headers_from_env.items()
+            }
+        if config.max_tokens is not None:
+            kwargs["max_tokens"] = config.max_tokens
+        if config.extra_body:
+            kwargs["extra_body"] = config.extra_body
 
         try:
             model = self._initializer(**kwargs)
         except (ImportError, ValueError) as exc:
             raise ModelConfigurationError(
-                f"Could not initialize provider '{config.provider}': {exc}"
+                f"Could not initialize provider '{config.provider}'; verify its installed "
+                "integration and non-secret configuration"
             ) from exc
         return cast(StructuredChatModel, model)
+
+
+def _required_environment(name: str) -> str:
+    value = os.getenv(name)
+    if not value:
+        raise ModelConfigurationError(f"Required environment variable is unset: {name}")
+    return value
+
+
+def _required_header_value(name: str) -> str:
+    value = _required_environment(name)
+    if "\r" in value or "\n" in value:
+        raise ModelConfigurationError(
+            f"Environment variable '{name}' contains an invalid HTTP header value"
+        )
+    return value

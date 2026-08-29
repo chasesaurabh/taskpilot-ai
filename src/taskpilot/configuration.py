@@ -10,7 +10,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from taskpilot.domain.models import WorkflowPolicy
-from taskpilot.models.config import ModelConfig, ModelRole, ModelRoutingPolicy, RoutingRule
+from taskpilot.models.config import (
+    ModelConfig,
+    ModelProfile,
+    ModelRole,
+    ModelRoutingPolicy,
+    RoutingRule,
+)
 from taskpilot.tools.types import RepositoryToolPolicy
 
 
@@ -74,6 +80,8 @@ class PolicyConfig(BaseModel):
     models: dict[str, ModelConfig]
     assignments: dict[ModelRole, str] = Field(default_factory=dict)
     routing_rules: tuple[RoutingRule, ...] = ()
+    model_profiles: dict[str, ModelProfile] = Field(default_factory=dict)
+    default_model_profile: str = Field(default="default", min_length=1)
     repository: RepositoryPolicyConfig
     workflow: WorkflowPolicy = WorkflowPolicy()
     observability: ObservabilityConfig = ObservabilityConfig()
@@ -111,13 +119,19 @@ def model_policy(policy: PolicyConfig, *, demo_mode: bool) -> ModelRoutingPolicy
         demo = ModelConfig(provider="demo", model="deterministic-pagination-v1", local=True)
         return ModelRoutingPolicy(
             models={"demo": demo},
-            assignments={role: "demo" for role in ModelRole},
+            profiles={"default": ModelProfile(assignments={role: "demo" for role in ModelRole})},
         )
     assignments = policy.assignments or _default_assignments(policy.models)
+    profiles = policy.model_profiles or {
+        policy.default_model_profile: ModelProfile(
+            assignments=assignments,
+            rules=policy.routing_rules,
+        )
+    }
     return ModelRoutingPolicy(
         models=policy.models,
-        assignments=assignments,
-        rules=policy.routing_rules,
+        profiles=profiles,
+        default_profile=policy.default_model_profile,
     )
 
 
@@ -141,4 +155,6 @@ def _normalize_policy(raw: dict[str, Any]) -> dict[str, Any]:
     if isinstance(routing, dict):
         normalized.setdefault("assignments", routing.get("assignments", {}))
         normalized.setdefault("routing_rules", routing.get("rules", ()))
+        normalized.setdefault("model_profiles", routing.get("profiles", {}))
+        normalized.setdefault("default_model_profile", routing.get("default_profile", "default"))
     return normalized

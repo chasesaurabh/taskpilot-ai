@@ -7,6 +7,12 @@ export interface CreateRunInput {
   task: string;
   max_repair_attempts: number;
   require_approval: boolean;
+  model_profile?: string;
+}
+
+export interface ModelProfiles {
+  default_profile: string;
+  profiles: string[];
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -23,6 +29,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function createRun(input: CreateRunInput): Promise<RunRecord> {
   return request('/runs', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function getModelProfiles(): Promise<ModelProfiles> {
+  return request('/model-profiles');
 }
 
 export function getRun(runId: string): Promise<RunRecord> {

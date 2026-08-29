@@ -7,13 +7,16 @@ models:
     timeout_seconds: 180
 
 routing:
-  assignments:
-    analyst: primary
-    planner: primary
-    architect: primary
-    coder: primary
-    reviewer: primary
-    reporter: primary
+  default_profile: primary
+  profiles:
+    primary:
+      assignments:
+        analyst: primary
+        planner: primary
+        architect: primary
+        coder: primary
+        reviewer: primary
+        reporter: primary
 
 repository:
   allowed_roots:

@@ -127,17 +127,39 @@ def test_api_create_approve_status_and_sse_replay(tmp_path: Path) -> None:
             graph=build_workflow(_api_nodes(), checkpointer=InMemorySaver()),
             store=store,
             repository_policy=RepositoryToolPolicy(allowed_roots=(tmp_path,)),
+            model_profiles=("balanced", "private"),
+            default_model_profile="balanced",
         )
         app = create_app(service)
         try:
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
+                profiles = await client.get("/model-profiles")
+                assert profiles.json() == {
+                    "default_profile": "balanced",
+                    "profiles": ["balanced", "private"],
+                }
+                unknown = await client.post(
+                    "/runs",
+                    json={
+                        "repository": str(repository),
+                        "task": "Make a change",
+                        "model_profile": "missing",
+                    },
+                )
+                assert unknown.status_code == 422
+                assert "Available profiles: balanced, private" in unknown.json()["detail"]
                 created = await client.post(
                     "/runs",
-                    json={"repository": str(repository), "task": "Make a change"},
+                    json={
+                        "repository": str(repository),
+                        "task": "Make a change",
+                        "model_profile": "private",
+                    },
                 )
                 assert created.status_code == 202
+                assert created.json()["policy"]["model_profile"] == "private"
                 run_id = created.json()["run_id"]
                 await _wait_for_status(store, run_id, RunStatus.WAITING)
 

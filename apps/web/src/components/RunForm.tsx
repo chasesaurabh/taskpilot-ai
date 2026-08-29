@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import type { CreateRunInput } from '../api';
+import { useEffect, useState, type FormEvent } from 'react';
+import { getModelProfiles, type CreateRunInput, type ModelProfiles } from '../api';
 
 const DEMO_REPOSITORY = import.meta.env.VITE_TASKPILOT_DEMO_REPOSITORY ?? './examples/sample-api';
 
@@ -12,10 +12,27 @@ export function RunForm({
 }) {
   const [repository, setRepository] = useState(DEMO_REPOSITORY);
   const [task, setTask] = useState('Add pagination to the products endpoint and update tests');
+  const [profiles, setProfiles] = useState<ModelProfiles>();
+  const [modelProfile, setModelProfile] = useState('');
+
+  useEffect(() => {
+    void getModelProfiles()
+      .then((configured) => {
+        setProfiles(configured);
+        setModelProfile(configured.default_profile);
+      })
+      .catch(() => setProfiles(undefined));
+  }, []);
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    onSubmit({ repository, task, max_repair_attempts: 2, require_approval: true });
+    onSubmit({
+      repository,
+      task,
+      max_repair_attempts: 2,
+      require_approval: true,
+      ...(modelProfile ? { model_profile: modelProfile } : {}),
+    });
   }
 
   return (
@@ -41,6 +58,18 @@ export function RunForm({
           required
         />
       </label>
+      {profiles && (
+        <label>
+          Model profile
+          <select value={modelProfile} onChange={(event) => setModelProfile(event.target.value)}>
+            {profiles.profiles.map((profile) => (
+              <option key={profile} value={profile}>
+                {profile === profiles.default_profile ? `${profile} (default)` : profile}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <button className="primary" disabled={disabled}>
         {disabled ? 'Starting…' : 'Start workflow'}
       </button>

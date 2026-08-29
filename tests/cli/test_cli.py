@@ -45,9 +45,12 @@ def test_run_command_starts_and_stops_at_approval(tmp_path: Path, monkeypatch) -
             "Add pagination",
             "--approval",
             "stop",
+            "--model-profile",
+            "private",
         ],
     )
 
     assert result.exit_code == 0
     assert FakeClient.created is not None
     assert FakeClient.created["task"] == "Add pagination"
+    assert FakeClient.created["model_profile"] == "private"
