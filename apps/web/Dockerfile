@@ -1,4 +1,4 @@
-FROM node:24-alpine AS build
+FROM node:26-alpine AS build
 
 ARG VITE_TASKPILOT_DEMO_REPOSITORY=/opt/taskpilot/examples/sample-api
 ENV VITE_TASKPILOT_DEMO_REPOSITORY=$VITE_TASKPILOT_DEMO_REPOSITORY
