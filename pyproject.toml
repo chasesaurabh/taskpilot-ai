@@ -21,8 +21,8 @@ dependencies = [
   "pydantic>=2.10,<3",
   "pydantic-settings>=2.7,<3",
   "pyyaml>=6.0,<7",
-  "rich>=13.9,<15",
-  "structlog>=24.4,<26",
+  "rich>=13.9,<16",
+  "structlog>=24.4,<27",
   "typer>=0.15,<1",
   "uvicorn[standard]>=0.34,<1",
 ]
@@ -41,7 +41,7 @@ postgres = [
   "psycopg[binary,pool]>=3.2,<4",
 ]
 dev = [
-  "mypy>=1.14,<2",
+  "mypy>=1.14,<3",
   "pip-audit>=2.9,<3",
   "pre-commit>=4.2,<5",
   "pytest>=8.3,<10",
