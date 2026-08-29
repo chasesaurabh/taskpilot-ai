@@ -6,6 +6,48 @@ function duration(state: WorkflowNodeState): string {
   return `${new Date(state.completedAt).getTime() - new Date(state.startedAt).getTime()} ms`;
 }
 
+function number(value: unknown): string {
+  return typeof value === 'number' ? value.toLocaleString() : '—';
+}
+
+function Operation({ event }: { event: RunEvent }) {
+  if (event.event_type === 'model.completed') {
+    return (
+      <div className="operation-card">
+        <div className="operation-heading">
+          <strong>{String(event.data.role ?? 'model')}</strong>
+          <span>{number(event.data.latency_ms)} ms</span>
+        </div>
+        <p>
+          {String(event.data.provider ?? 'provider')} · {String(event.data.model ?? 'model')}
+        </p>
+        <small>
+          {number(event.data.input_tokens)} in · {number(event.data.output_tokens)} out
+        </small>
+      </div>
+    );
+  }
+  const tool = String(event.data.tool ?? 'repository tool');
+  const passed = event.data.passed;
+  const changes = event.data.changes;
+  return (
+    <div className="operation-card">
+      <div className="operation-heading">
+        <strong>{tool}</strong>
+        {typeof passed === 'boolean' && (
+          <span className={passed ? 'text-completed' : 'text-failed'}>
+            {passed ? 'passed' : 'failed'}
+          </span>
+        )}
+      </div>
+      <p>{String(event.data.summary ?? 'Constrained repository operation')}</p>
+      <small>
+        {Array.isArray(changes) ? `${changes.length} file change(s)` : `event #${event.sequence}`}
+      </small>
+    </div>
+  );
+}
+
 export function NodeInspector({
   nodeId,
   state,
@@ -40,7 +82,10 @@ export function NodeInspector({
       </div>
       <h3>State update</h3>
       {Object.keys(update).length ? (
-        <pre>{JSON.stringify(update, null, 2)}</pre>
+        <details>
+          <summary>Inspect structured node output</summary>
+          <pre>{JSON.stringify(update, null, 2)}</pre>
+        </details>
       ) : (
         <p className="muted">Select a completed node to inspect its structured output.</p>
       )}
@@ -48,14 +93,7 @@ export function NodeInspector({
       {operations.length ? (
         <div className="operation-list">
           {operations.map((event) => (
-            <div key={event.sequence}>
-              <strong>
-                {event.event_type === 'tool.completed'
-                  ? String(event.data.tool)
-                  : String(event.data.model)}
-              </strong>
-              <span>{event.event_type.replace('.', ' · ')}</span>
-            </div>
+            <Operation key={event.sequence} event={event} />
           ))}
         </div>
       ) : (

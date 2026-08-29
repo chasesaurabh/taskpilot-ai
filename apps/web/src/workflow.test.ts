@@ -39,4 +39,16 @@ describe('workflow event projection', () => {
 
     expect(usage).toEqual({ calls: 2, input: 200, output: 60 });
   });
+
+  it('marks unvisited branches as skipped when a run completes', () => {
+    let state = initialWorkflowState();
+    state = reduceWorkflowEvent(state, event('node.completed', 'testing'));
+    state = reduceWorkflowEvent(state, event('node.completed', 'code_review'));
+    state = reduceWorkflowEvent(state, event('node.completed', 'final_report'));
+    state = reduceWorkflowEvent(state, event('run.completed'));
+
+    expect(state.nodes.failure_analysis.status).toBe('skipped');
+    expect(state.nodes.repair.status).toBe('skipped');
+    expect(state.nodes.final_report.status).toBe('completed');
+  });
 });

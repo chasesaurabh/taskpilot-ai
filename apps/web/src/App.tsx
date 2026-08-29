@@ -16,6 +16,7 @@ export function App() {
   const { run, workflow, dispatch, start, decide, starting, error } = useRun();
   const usage = useMemo(() => modelUsage(workflow.events), [workflow.events]);
   const selected = workflow.nodes[workflow.selectedNode];
+  const terminal = ['completed', 'failed', 'rejected'].includes(run?.status ?? '');
 
   return (
     <main>
@@ -59,7 +60,7 @@ export function App() {
               </div>
               <div>
                 <span>Duration</span>
-                <strong>{elapsed(run.created_at, run.updated_at)}</strong>
+                <strong>{elapsed(run.created_at, terminal ? run.updated_at : undefined)}</strong>
               </div>
               <div>
                 <span>Model calls</span>
@@ -88,7 +89,7 @@ export function App() {
                 </div>
                 <div className="legend">
                   <span className="complete" /> Complete <span className="active" /> Active{' '}
-                  <span className="wait" /> Waiting
+                  <span className="wait" /> Waiting <span className="failed" /> Failed
                 </div>
               </div>
               <WorkflowGraph

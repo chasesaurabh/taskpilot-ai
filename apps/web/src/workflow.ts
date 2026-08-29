@@ -80,6 +80,10 @@ export function reduceWorkflowEvent(state: WorkflowViewState, event: RunEvent): 
   } else if (event.event_type === 'run.failed') {
     const runningNode = Object.entries(nodes).find(([, value]) => value.status === 'running');
     if (runningNode) nodes[runningNode[0]] = { ...runningNode[1], status: 'failed' };
+  } else if (['run.completed', 'run.stopped'].includes(event.event_type)) {
+    for (const [id, node] of Object.entries(nodes)) {
+      if (node.status === 'pending') nodes[id] = { ...node, status: 'skipped' };
+    }
   }
 
   return { ...state, nodes, approvalPayload, events: [...state.events, event] };

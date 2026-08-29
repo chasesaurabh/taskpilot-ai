@@ -9,12 +9,20 @@ export function ApprovalPanel({
 }) {
   const [reason, setReason] = useState('');
   const plan = payload.plan as { summary?: string; proposed_commands?: string[][] } | undefined;
+  const files = Array.isArray(payload.proposed_files) ? payload.proposed_files : [];
+  const risks = Array.isArray(payload.risks) ? payload.risks : [];
+  const commands = Array.isArray(payload.proposed_commands) ? payload.proposed_commands : [];
   return (
     <section className="approval-panel">
-      <div>
+      <div className="approval-copy">
         <div className="eyebrow warning">Human checkpoint</div>
         <h2>Review before repository writes</h2>
         <p>{plan?.summary ?? 'Inspect the plan and node findings before continuing.'}</p>
+        <div className="approval-evidence">
+          <span>{files.length} proposed file(s)</span>
+          <span>{commands.length} validation command(s)</span>
+          <span>{risks.length} disclosed risk(s)</span>
+        </div>
       </div>
       <input
         aria-label="Decision reason"

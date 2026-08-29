@@ -34,7 +34,7 @@ const positions: Record<string, { x: number; y: number }> = {
   final_report: { x: 1540, y: 115 },
 };
 
-const edges: Edge[] = [
+const edgePairs = [
   ['repository_context', 'task_analysis'],
   ['task_analysis', 'planning'],
   ['planning', 'architecture_review'],
@@ -48,15 +48,7 @@ const edges: Edge[] = [
   ['failure_analysis', 'repair'],
   ['repair', 'testing'],
   ['code_review', 'final_report'],
-].map(([source, target], index) => ({
-  id: `edge-${index}`,
-  source,
-  target,
-  type: 'smoothstep',
-  animated: false,
-  markerEnd: { type: MarkerType.ArrowClosed, color: '#48566f' },
-  style: { stroke: '#48566f', strokeWidth: 1.4 },
-}));
+];
 
 const StatusNode = memo(({ data, selected }: NodeProps<Node<StatusNodeData>>) => (
   <div className={`workflow-node status-${data.status} ${selected ? 'selected' : ''}`}>
@@ -89,6 +81,26 @@ export function WorkflowGraph({
         selected: workflow.selectedNode === id,
       })),
     [workflow.nodes, workflow.selectedNode],
+  );
+  const edges = useMemo<Edge[]>(
+    () =>
+      edgePairs.map(([source, target], index) => {
+        const sourceStatus = workflow.nodes[source]?.status;
+        const targetStatus = workflow.nodes[target]?.status;
+        const active = targetStatus === 'running' || targetStatus === 'waiting';
+        const traversed = sourceStatus === 'completed' && targetStatus === 'completed';
+        const color = active ? '#51d6c9' : traversed ? '#59d68a' : '#48566f';
+        return {
+          id: `edge-${index}`,
+          source,
+          target,
+          type: 'smoothstep',
+          animated: active,
+          markerEnd: { type: MarkerType.ArrowClosed, color },
+          style: { stroke: color, strokeWidth: active || traversed ? 2 : 1.4 },
+        };
+      }),
+    [workflow.nodes],
   );
 
   return (

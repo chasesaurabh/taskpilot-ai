@@ -118,7 +118,7 @@ sequenceDiagram
 
 ## Persistence and resume
 
-LangGraph checkpoints are authoritative for graph position and workflow state. The run store is a query-optimized projection for API status, timestamps, ownership, and terminal outcome. The event store is append-only and provides monotonic sequence numbers for replayable SSE. Artifacts hold bulky output.
+LangGraph checkpoints are authoritative for graph position and workflow state. The run store is a query-optimized projection for API status, timestamps, ownership, and terminal outcome. The event store is append-only and provides monotonic sequence numbers for replayable SSE. Public event payloads are bounded and redact file content; a separate artifact store for bulky output is future work.
 
 Local mode uses async SQLite adapters. Production mode uses PostgreSQL implementations for LangGraph checkpoints, run projections, and the event log while retaining their logical separation. PostgreSQL event sequences are allocated under a transaction-scoped advisory lock; lifecycle transitions remain compare-and-set operations. The run ID is also the LangGraph `thread_id`. Approval resumes the same thread with `Command(resume=...)`, so duplicate approvals or competing workers cannot resume a graph twice.
 

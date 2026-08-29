@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import type { CreateRunInput } from '../api';
 
+const DEMO_REPOSITORY = import.meta.env.VITE_TASKPILOT_DEMO_REPOSITORY ?? './examples/sample-api';
+
 export function RunForm({
   onSubmit,
   disabled,
@@ -8,7 +10,7 @@ export function RunForm({
   onSubmit: (value: CreateRunInput) => void;
   disabled: boolean;
 }) {
-  const [repository, setRepository] = useState('./examples/sample-api');
+  const [repository, setRepository] = useState(DEMO_REPOSITORY);
   const [task, setTask] = useState('Add pagination to the products endpoint and update tests');
 
   function submit(event: FormEvent) {

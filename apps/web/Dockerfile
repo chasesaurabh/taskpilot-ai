@@ -1,5 +1,8 @@
 FROM node:24-alpine AS build
 
+ARG VITE_TASKPILOT_DEMO_REPOSITORY=/opt/taskpilot/examples/sample-api
+ENV VITE_TASKPILOT_DEMO_REPOSITORY=$VITE_TASKPILOT_DEMO_REPOSITORY
+
 RUN corepack enable
 WORKDIR /workspace
 COPY pnpm-workspace.yaml pnpm-lock.yaml ./

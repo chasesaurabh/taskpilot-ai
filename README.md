@@ -1,46 +1,38 @@
 # TaskPilot AI
 
-> A human-governed, graph-based orchestrator for planning, implementing, validating, and reviewing software changes.
+## Agentic Software Delivery Orchestrator
 
 [![CI](https://github.com/chasesaurabh/taskpilot-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/chasesaurabh/taskpilot-ai/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/chasesaurabh/taskpilot-ai/actions/workflows/codeql.yml/badge.svg)](https://github.com/chasesaurabh/taskpilot-ai/actions/workflows/codeql.yml)
 
-TaskPilot AI turns a repository-scoped engineering request into an observable, resumable delivery workflow. LangChain supplies model and tool abstractions; LangGraph supplies the explicit state machine, branching, retries, interrupts, checkpointing, and streaming.
+![TaskPilot AI completed delivery workflow](docs/assets/taskpilot-hero.png)
 
-## Project status
+TaskPilot turns a repository-scoped engineering request into a visible, human-governed delivery
+workflow. **LangGraph owns orchestration and durability. LangChain owns provider-neutral prompts and
+structured model calls. TaskPilot owns policy and constrained side effects.**
 
-TaskPilot AI is an early public preview with a complete, tested local product path: workflow, approval, persistence, API/SSE, CLI, graph-first web interface, structured telemetry, PostgreSQL adapters, Docker packaging, and a no-key sample scenario. The API is not yet intended for untrusted or multi-tenant deployment.
-
-See the [reproducible demo capture guide](docs/demo.md) for the two recommended screenshots; binary portfolio media is intentionally not committed yet.
-
-## Why this exists
-
-Coding agents are useful, but unconstrained model/tool loops are difficult to operate safely. Engineering work needs deterministic boundaries around probabilistic behavior: visible plans, bounded tools, approval gates, validation, retry limits, durable state, and an audit trail. TaskPilot AI makes those controls first-class product concepts.
-
-## Capabilities
-
-- Typed LangGraph state, parallel analysis, conditional repair loops, bounded retry exhaustion, and native human interrupts.
-- Constrained repository reads, hash-guarded atomic writes, fixed Git inspection, and shell-free command allowlists.
-- Provider-neutral LangChain structured output with visible model routing, latency, and token usage.
-- SQLite and PostgreSQL checkpoints, lifecycle projections, replayable SSE, and restart-safe resume.
-- Installable CLI, graph-first React UI, structured JSON logs, repeatable evaluations, Docker Compose, and a runnable sample API.
-
-## Architecture
-
-```mermaid
-flowchart LR
-    Developer --> Web[Graph-first Web UI]
-    Developer --> CLI
-    Web --> API[FastAPI lifecycle API]
-    CLI --> API
-    API --> Runs[Run service]
-    Runs --> Graph[LangGraph workflow]
-    Graph --> Models[LangChain model gateway]
-    Graph --> Tools[Constrained repository tools]
-    Graph --> Checkpoints[(Checkpoints)]
-    Runs --> Events[(Run and event store)]
-    Tools --> Repo[Allowed Git repository]
-    Graph -. traces .-> LangSmith
+```bash
+docker compose up --build
 ```
+
+Open `http://localhost:5173`, start the prefilled task, inspect the parallel analysis, approve the
+plan, and watch implementation, real subprocess validation, review, and the final report. No model
+key is required for this deterministic portfolio path.
+
+## Why this is more than a coding-agent loop
+
+- **Deterministic orchestration around probabilistic AI:** typed partial state, explicit routes, and
+  a bounded repair budget—not a model deciding when it is done.
+- **Human governance:** a native persisted `interrupt()` discloses files, commands, findings, and
+  risks before writes; `Command(resume=…)` continues the same saved thread.
+- **Durable and observable execution:** SQLite/PostgreSQL checkpoints are separate from the run/event
+  projection used by replayable SSE, the CLI, and the graph-first UI.
+- **Constrained effects:** application-owned hash preconditions, atomic writes, no general shell,
+  allowlisted argument vectors, stripped command environments, timeouts, and output limits.
+- **Evidence-driven recovery:** validation and blocking review findings route through a real,
+  bounded diagnosis/repair/retest loop.
+
+## Delivery graph
 
 ```mermaid
 flowchart TD
@@ -58,40 +50,53 @@ flowchart TD
     Review -->|accepted or exhausted| Report --> End
 ```
 
-See [Architecture](docs/architecture.md) for boundaries, state ownership, execution semantics, and tradeoffs.
+Architecture and repository-impact analysis execute concurrently and join before approval. Routing
+functions inspect typed evidence; they never ask a model where the workflow should go.
 
-## Quick start
+## System architecture
 
-The fastest no-key path starts the PostgreSQL-backed API and web interface:
-
-```bash
-docker compose up --build
+```mermaid
+flowchart LR
+    Developer --> Web[Graph-first React UI]
+    Developer --> CLI
+    Web --> API[FastAPI lifecycle API]
+    CLI --> API
+    API --> Runs[Run service]
+    Runs --> Graph[LangGraph StateGraph]
+    Graph --> Models[LangChain model gateway]
+    Graph --> Tools[Repository capabilities]
+    Graph --> Checkpoints[(Checkpoints)]
+    Runs --> Events[(Run + event projection)]
+    Tools --> Repo[Allowed Git repository]
+    Graph -. optional traces .-> LangSmith
 ```
 
-Open `http://localhost:5173` and run the prefilled pagination task against `/opt/taskpilot/examples/sample-api`. The deterministic demo is deliberately scoped to that bundled task; set `TASKPILOT_DEMO_MODE=false` and configure provider assignments for general engineering requests.
+See [Architecture](docs/architecture.md) and
+[LangGraph and LangChain design](docs/langgraph-design.md) for state ownership, framework boundaries,
+and the exact source modules behind each capability.
+
+## Demo and real models
+
+The no-key model intentionally implements one exact task:
+
+```text
+Add pagination to the products endpoint and update tests
+```
+
+For OpenAI, Anthropic, hosted OpenAI-compatible endpoints, or local OpenAI-compatible inference, use
+the [opt-in live-model validation](docs/live-model-validation.md). Two scenarios exercise the same
+full API and graph and emit model selection, graph path, tools, files, validation, retry, token, and
+duration evidence. Live-provider tests never run in ordinary CI and were not executed in the
+credential-free release-review environment.
 
 For direct development:
 
 ```bash
 cp .env.example .env
 uv sync --all-extras
-uv run taskpilot-api                         # terminal 1
-pnpm install && pnpm --filter @taskpilot/web dev  # terminal 2
-uv run taskpilot run --repo ./examples/sample-api \
-  --task "Add pagination to the products endpoint and update tests"
+uv run taskpilot-api                              # terminal 1
+pnpm install && pnpm --filter @taskpilot/web dev # terminal 2
 ```
-
-The deterministic test harness separately exercises success, repair, rejection, restart/resume, and retry exhaustion without paid model calls.
-
-## Suggested engineering tasks
-
-The no-key model implements one deterministic task so its claims can be verified exactly:
-
-```text
-Add pagination to the products endpoint and update tests
-```
-
-With `TASKPILOT_DEMO_MODE=false` and real providers configured, the sample repository also supports useful review tasks such as adding user creation and validation, introducing product caching with explicit invalidation, or extending health reporting. Provider-backed behavior remains probabilistic; review the plan and diff before approving writes.
 
 ## CLI
 

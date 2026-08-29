@@ -240,7 +240,7 @@ textarea:focus {
   margin: 20px 32px 0;
   padding: 19px 22px;
   display: grid;
-  grid-template-columns: 1fr minmax(240px, 380px) auto;
+  grid-template-columns: minmax(380px, 1fr) minmax(240px, 340px) auto;
   align-items: center;
   gap: 22px;
   border: 1px solid rgba(240, 184, 92, 0.4);
@@ -256,6 +256,19 @@ textarea:focus {
   margin: 0;
   color: var(--muted);
   font-size: 12px;
+}
+.approval-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+.approval-evidence span {
+  padding: 4px 7px;
+  border: 1px solid rgba(240, 184, 92, 0.24);
+  border-radius: 999px;
+  color: #d8c7aa;
+  font: 9px 'DM Mono';
 }
 .approval-actions {
   display: flex;
@@ -308,6 +321,9 @@ textarea:focus {
 }
 .legend .wait {
   background: var(--amber);
+}
+.legend .failed {
+  background: var(--red);
 }
 
 .workflow-node {
@@ -367,6 +383,10 @@ textarea:focus {
   background: var(--amber);
   box-shadow: 0 0 12px var(--amber);
 }
+.status-skipped {
+  opacity: 0.5;
+  border-style: dashed;
+}
 .react-flow__controls {
   background: #131d2e;
   border: 1px solid var(--line);
@@ -408,6 +428,11 @@ textarea:focus {
   white-space: pre-wrap;
   word-break: break-word;
 }
+.inspector details summary {
+  cursor: pointer;
+  color: #aebbd0;
+  font: 10px 'DM Mono';
+}
 .privacy-note {
   color: #64728a;
   font-size: 10px;
@@ -419,22 +444,37 @@ textarea:focus {
   gap: 0.55rem;
 }
 
-.operation-list div {
+.operation-card {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.75rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.65rem;
+  background: rgb(7 13 24 / 55%);
+}
+.operation-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.7rem 0.8rem;
-  border: 1px solid var(--border);
-  border-radius: 0.65rem;
-  background: rgb(7 13 24 / 55%);
 }
-
-.operation-list span {
+.operation-card p {
+  margin: 0;
+  color: #aebbd0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+.operation-card span,
+.operation-card small {
   color: var(--muted);
-  font-family: var(--mono);
+  font-family: 'DM Mono';
   font-size: 0.68rem;
-  text-transform: uppercase;
+}
+.operation-card .text-completed {
+  color: var(--green);
+}
+.operation-card .text-failed {
+  color: var(--red);
 }
 .text-running {
   color: var(--cyan);
