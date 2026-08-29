@@ -52,6 +52,8 @@ jobs:
         run: uv run mypy src
       - name: Test backend and PostgreSQL adapter
         run: uv run pytest --cov=taskpilot --cov-report=term-missing
+      - name: Audit Python dependencies
+        run: uv run pip-audit
       - name: Test sample repository
         working-directory: examples/sample-api
         run: ../../.venv/bin/python -m pytest -q
@@ -73,6 +75,7 @@ jobs:
       - run: pnpm --filter @taskpilot/web lint
       - run: pnpm --filter @taskpilot/web test
       - run: pnpm --filter @taskpilot/web build
+      - run: pnpm audit --prod --audit-level high
 
   containers:
     name: Container build

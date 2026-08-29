@@ -46,9 +46,20 @@ class ModelGateway:
             model = self._factory.create(selection.config)
             self._models[selection.key] = model
 
-        chain = prompt.template | model.with_structured_output(output_schema, include_raw=True)
         started = time.monotonic()
-        response = chain.invoke(variables)
+        try:
+            chain = prompt.template | model.with_structured_output(
+                output_schema,
+                include_raw=True,
+            )
+            response = chain.invoke(variables)
+        except ModelResponseError:
+            raise
+        except Exception as exc:
+            raise ModelResponseError(
+                f"Model invocation failed for role '{role}' using provider "
+                f"'{selection.config.provider}'"
+            ) from exc
         latency_ms = round((time.monotonic() - started) * 1_000)
         if not isinstance(response, dict):
             raise ModelResponseError("Structured model wrapper returned an unexpected response")

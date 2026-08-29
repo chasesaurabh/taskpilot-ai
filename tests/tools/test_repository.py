@@ -176,3 +176,60 @@ def test_invalid_regex_is_reported_as_tool_error(tmp_path: Path) -> None:
 
     with pytest.raises(RepositoryToolError, match="Invalid search expression"):
         workspace.search_code("(", use_regex=True)
+
+
+def test_invalid_utf8_is_rejected_without_lossy_decoding(tmp_path: Path) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    (repository / "binary.dat").write_bytes(b"\xff\xfe\x00")
+    workspace = RepositoryWorkspace(repository, _policy(tmp_path))
+
+    with pytest.raises(RepositoryToolError, match="not UTF-8"):
+        workspace.read_file("binary.dat")
+
+
+def test_symlink_escape_is_rejected_when_platform_allows_symlinks(tmp_path: Path) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("private", encoding="utf-8")
+    link = repository / "linked.txt"
+    try:
+        link.symlink_to(outside)
+    except OSError:
+        pytest.skip("creating symlinks is not permitted on this host")
+    workspace = RepositoryWorkspace(repository, _policy(tmp_path))
+
+    with pytest.raises(RepositoryBoundaryError, match="escapes"):
+        workspace.read_file("linked.txt")
+    assert "linked.txt" not in {entry.path for entry in workspace.list_files()}
+
+
+def test_commands_do_not_receive_provider_secrets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    script = repository / "inspect_env.py"
+    script.write_text(
+        "import os\nprint(os.getenv('OPENAI_API_KEY', 'missing'))\n",
+        encoding="utf-8",
+    )
+    executable = Path(sys.executable).name
+    monkeypatch.setenv("OPENAI_API_KEY", "must-not-reach-command")
+    monkeypatch.setenv("PATH", str(Path(sys.executable).parent))
+    workspace = RepositoryWorkspace(
+        repository,
+        _policy(
+            tmp_path,
+            allow_commands=True,
+            allowed_commands=((executable, "inspect_env.py"),),
+        ),
+    )
+
+    result = workspace.execute((executable, "inspect_env.py"))
+
+    assert result.exit_code == 0
+    assert result.output.strip() == "missing"
+    assert "must-not-reach-command" not in result.output

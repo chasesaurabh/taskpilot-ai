@@ -23,3 +23,6 @@ Important deployment responsibilities:
 - Rotate the demonstration PostgreSQL password before adapting Compose to a shared environment.
 
 See the [architecture security boundary](docs/architecture.md#repository-tool-security) and [repository tool ADR](docs/adr/005-repository-tool-security.md) for design details.
+
+The release-candidate adversarial review and test evidence are recorded in
+[docs/security-review.md](docs/security-review.md).

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
 import sys
@@ -30,6 +31,8 @@ from taskpilot.models.demo import DeterministicModel, DeterministicModelFactory
 from taskpilot.models.gateway import ModelGateway
 from taskpilot.models.routing import ModelRouter
 from taskpilot.nodes import EngineeringNodes
+from taskpilot.tools.errors import RepositoryToolError
+from taskpilot.tools.repository import RepositoryWorkspace
 from taskpilot.tools.types import RepositoryToolPolicy
 
 
@@ -216,6 +219,30 @@ def test_blocking_review_drives_a_focused_repair_without_stale_validation_diagno
     assert history[-5:] == ["code_review", "repair", "testing", "code_review", "final_report"]
     assert result["repair_attempts"] == 2
     assert result["final_report"].outcome == RunStatus.COMPLETED
+
+
+def test_proposal_is_fully_validated_before_the_first_repository_write(tmp_path: Path) -> None:
+    repository = _repository(tmp_path)
+    workspace = RepositoryWorkspace(
+        repository,
+        RepositoryToolPolicy(allowed_roots=(tmp_path,), allow_writes=True),
+    )
+    proposal = ImplementationProposal(
+        summary="Invalid duplicate proposal",
+        changes=(
+            ProposedFileChange(path="value.txt", operation="replace", content="first\n"),
+            ProposedFileChange(path="value.txt", operation="replace", content="second\n"),
+        ),
+    )
+
+    with pytest.raises(RepositoryToolError, match="same path"):
+        EngineeringNodes._apply_proposal(
+            workspace,
+            proposal,
+            {"value.txt": hashlib.sha256(b"initial\n").hexdigest()},
+        )
+
+    assert (repository / "value.txt").read_bytes() == b"initial\n"
 
 
 def test_real_approval_interrupt_discloses_plan_and_blocks_writes(

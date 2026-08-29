@@ -173,6 +173,22 @@ class UnexpectedResponseModel:
         return RunnableLambda(lambda _: "not a structured envelope")
 
 
+class ParsingErrorModel:
+    def with_structured_output(self, _: type[BaseModel], *, include_raw: bool = False) -> Any:
+        from langchain_core.runnables import RunnableLambda
+
+        return RunnableLambda(
+            lambda _: {"parsed": None, "raw": None, "parsing_error": ValueError("bad JSON")}
+        )
+
+
+class FailingProviderModel:
+    def with_structured_output(self, _: type[BaseModel], *, include_raw: bool = False) -> Any:
+        from langchain_core.runnables import RunnableLambda
+
+        return RunnableLambda(lambda _: (_ for _ in ()).throw(RuntimeError("secret detail")))
+
+
 def test_gateway_rejects_invalid_structured_envelope() -> None:
     gateway = ModelGateway(
         ModelRouter(_policy()),
@@ -187,6 +203,32 @@ def test_gateway_rejects_invalid_structured_envelope() -> None:
             variables={"task": "Task", "context": "Context"},
             output_schema=TaskAnalysis,
         )
+
+
+@pytest.mark.parametrize(
+    ("model", "expected"),
+    [
+        (ParsingErrorModel(), "Structured response parsing failed"),
+        (FailingProviderModel(), "Model invocation failed"),
+    ],
+)
+def test_gateway_normalizes_malformed_and_failed_provider_responses(
+    model: Any,
+    expected: str,
+) -> None:
+    gateway = ModelGateway(ModelRouter(_policy()), DeterministicModelFactory(model))
+
+    with pytest.raises(ModelResponseError, match=expected) as failure:
+        gateway.invoke_structured(
+            role=ModelRole.ANALYST,
+            routing_context=RoutingContext(),
+            prompt=TASK_ANALYSIS_PROMPT,
+            variables={"task": "Task", "context": "Context"},
+            output_schema=TaskAnalysis,
+        )
+
+    if isinstance(model, FailingProviderModel):
+        assert "secret detail" not in str(failure.value)
 
 
 def test_model_proposals_describe_intent_without_owning_write_hashes() -> None:
