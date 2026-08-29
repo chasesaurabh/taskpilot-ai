@@ -83,6 +83,8 @@ export function WorkflowGraph({
         id,
         type: 'status',
         position: positions[id],
+        width: 142,
+        height: 55,
         data: { label: NODE_LABELS[id], status: state.status },
         selected: workflow.selectedNode === id,
       })),

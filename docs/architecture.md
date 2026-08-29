@@ -140,15 +140,15 @@ Repository input and model output are untrusted. Every operation resolves paths 
 - write: atomic create/replace of explicitly named files with precondition hashes;
 - execute: argument-vector commands matched against configured prefixes.
 
-There is no general shell tool. Commands do not use shell interpolation, inherit only an allowlisted environment, have time and output limits, and run in the repository root. Approval policy can independently gate plans, writes, and commands. This reduces accidents but is not isolation from a malicious repository; disposable containers or VMs are required for that threat model.
+There is no general shell tool. Commands do not use shell interpolation, inherit only an allowlisted environment, have time and output limits, and run in the repository root. The current graph gates the combined plan before any write or command; independent write and command approval flags are reserved in policy but are not yet separate interrupts. These controls reduce accidents but are not isolation from a malicious repository; disposable containers or VMs are required for that threat model.
 
 ## Human approval
 
-The default policy requires one approval after the plan and parallel architecture/impact analysis, before any write. The interrupt payload contains the plan, findings, intended files, proposed validation commands, risks, and policy-relevant actions. A rejection requires an optional reason and terminates with an auditable report. Deployments may enable additional write or command gates, but approval fatigue is deliberately avoided by default.
+The default policy requires one approval after the plan and parallel architecture/impact analysis, before any write. The interrupt payload contains the plan, findings, intended files, proposed validation commands, risks, and policy-relevant actions. A rejection accepts an optional reason and terminates with an auditable report. Separate write and command interrupts are a documented extension point, not a current capability.
 
 ## Streaming
 
-The graph emits typed internal events. The application service normalizes them into stable public events and persists each event before live publication. `GET /runs/{id}/events` uses Server-Sent Events because updates are server-to-client, browsers reconnect natively, and `Last-Event-ID` supports replay. Mutations such as approval and rejection remain authenticated HTTP requests. The public event schema is versioned independently of raw LangGraph events.
+The graph emits typed internal events. The application service normalizes them into stable public events and persists each event before live publication. `GET /runs/{id}/events` uses Server-Sent Events because updates are server-to-client, browsers reconnect natively, and `Last-Event-ID` supports replay. Mutations such as approval and rejection remain ordinary HTTP requests; authentication is a deployment responsibility in this preview. A future `/v1` API will version the public schema before backward-incompatible changes are introduced.
 
 ## Failure recovery
 

@@ -1,0 +1,33 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: Ruff formatting
+        entry: uv run ruff format --check .
+        language: system
+        pass_filenames: false
+        types_or: [python, pyi]
+      - id: ruff-lint
+        name: Ruff lint
+        entry: uv run ruff check .
+        language: system
+        pass_filenames: false
+        types_or: [python, pyi]
+      - id: mypy
+        name: mypy
+        entry: uv run mypy src
+        language: system
+        pass_filenames: false
+        types_or: [python, pyi]
+      - id: prettier
+        name: Frontend formatting
+        entry: pnpm --filter @taskpilot/web format:check
+        language: system
+        pass_filenames: false
+        files: ^apps/web/
+      - id: eslint
+        name: Frontend lint
+        entry: pnpm --filter @taskpilot/web lint
+        language: system
+        pass_filenames: false
+        files: ^apps/web/

@@ -4,9 +4,13 @@ import shutil
 import time
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
+from langchain_core.prompt_values import StringPromptValue
 
 from taskpilot.configuration import AppSettings, load_policy, repository_policy
+from taskpilot.domain.models import TaskAnalysis
+from taskpilot.models.scenario import pagination_demo_model
 from taskpilot.runtime import create_runtime_app
 
 PROJECT_ROOT = Path(__file__).parents[2]
@@ -19,6 +23,13 @@ def test_environment_repository_roots_override_yaml(tmp_path: Path) -> None:
     resolved = repository_policy(settings, policy)
 
     assert resolved.allowed_roots == (tmp_path.resolve(),)
+
+
+def test_no_key_demo_rejects_tasks_it_cannot_implement_credibly() -> None:
+    runnable = pagination_demo_model().with_structured_output(TaskAnalysis)
+
+    with pytest.raises(ValueError, match="supports only"):
+        runnable.invoke(StringPromptValue(text="Add a billing system"))
 
 
 def test_packaged_runtime_executes_the_no_key_pagination_demo(tmp_path: Path) -> None:

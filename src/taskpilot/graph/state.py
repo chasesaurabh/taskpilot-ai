@@ -31,8 +31,8 @@ class WorkflowState(TypedDict, total=False):
     """Durable graph state.
 
     Append-only fields declare reducers so parallel nodes can safely contribute in
-    the same superstep. Bulky source and command content is represented by artifact
-    identifiers in the nested models rather than embedded here.
+    the same superstep. Context and command output are bounded; proposal content is
+    retained for durable writes but redacted from public events.
     """
 
     metadata: RunMetadata

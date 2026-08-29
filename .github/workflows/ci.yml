@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend quality and tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: taskpilot_test
+          POSTGRES_USER: taskpilot
+          POSTGRES_PASSWORD: taskpilot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U taskpilot -d taskpilot_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TASKPILOT_TEST_POSTGRES_URL: postgresql://taskpilot:taskpilot@127.0.0.1:5432/taskpilot_test
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --all-extras --frozen
+      - name: Verify formatting
+        run: uv run ruff format --check .
+      - name: Lint
+        run: uv run ruff check .
+      - name: Type check
+        run: uv run mypy src
+      - name: Test backend and PostgreSQL adapter
+        run: uv run pytest --cov=taskpilot --cov-report=term-missing
+      - name: Test sample repository
+        working-directory: examples/sample-api
+        run: ../../.venv/bin/python -m pytest -q
+
+  frontend:
+    name: Frontend quality and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @taskpilot/web format:check
+      - run: pnpm --filter @taskpilot/web lint
+      - run: pnpm --filter @taskpilot/web test
+      - run: pnpm --filter @taskpilot/web build
+
+  containers:
+    name: Container build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: docker compose config --quiet
+      - run: docker compose build

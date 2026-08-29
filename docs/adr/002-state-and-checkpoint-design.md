@@ -1,4 +1,4 @@
-# ADR 002: Separate graph checkpoints, run projections, and artifacts
+# ADR 002: Separate graph checkpoints and query projections
 
 - Status: Accepted
 - Date: 2026-08-28
@@ -9,7 +9,7 @@ Graph execution needs complete resumable state, while APIs need efficient run qu
 
 ## Decision
 
-Use a versioned typed graph state and LangGraph checkpointer as the execution authority. Maintain a run projection and append-only event log for product queries. Store bulky content in an artifact store and reference it by immutable identifier and hash.
+Use a versioned typed graph state and LangGraph checkpointer as the execution authority. Maintain a run projection and append-only event log for product queries. Keep repository context and command output bounded; reserve immutable artifact identifiers in domain models for a later object-store adapter.
 
 ## Alternatives considered
 
@@ -19,4 +19,4 @@ Use a versioned typed graph state and LangGraph checkpointer as the execution au
 
 ## Consequences
 
-Resume semantics stay native to LangGraph and public contracts stay stable. Operators must back up and retain checkpoint, run/event, and artifact data consistently. State migrations require explicit schema-version handling.
+Resume semantics stay native to LangGraph and public contracts stay stable. Operators must back up checkpoint and run/event data consistently. Proposed file content remains in trusted checkpoints for durable hash-guarded resume but is redacted from public events; long-term patch and full-log retention awaits the artifact adapter. State migrations require explicit schema-version handling.

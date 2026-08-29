@@ -20,3 +20,11 @@ uv run pytest \
 | Retry exhaustion | Repair budget ends deterministically with a failed report | `test_real_nodes_stop_safely_when_repairs_never_pass` |
 
 These are behavioral tests rather than mocked screenshots: graph routes, checkpoints, repository writes, subprocess validation, and terminal reports are asserted directly.
+
+The packaged no-key product path has an additional API-level evaluation:
+
+```bash
+uv run pytest tests/runtime/test_runtime.py
+```
+
+It copies the bundled sample repository, starts the lifespan-managed SQLite runtime, waits for the real LangGraph interrupt, approves the run over HTTP, applies pagination, executes the sample tests as a subprocess, and asserts model/tool telemetry plus event redaction. PostgreSQL parity is covered by `tests/persistence/test_postgres_store.py` when `TASKPILOT_TEST_POSTGRES_URL` is set; CI supplies a disposable PostgreSQL service automatically.

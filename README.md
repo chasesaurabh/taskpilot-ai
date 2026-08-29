@@ -8,7 +8,9 @@ TaskPilot AI turns a repository-scoped engineering request into an observable, r
 
 ## Project status
 
-TaskPilot AI is under active construction. The complete local product path is implemented and tested: workflow, approval, persistence, API/SSE, CLI, graph-first web interface, structured telemetry, PostgreSQL adapters, Docker packaging, and a no-key sample scenario. Release hardening remains in progress; see the [roadmap](#roadmap).
+TaskPilot AI is an early public preview with a complete, tested local product path: workflow, approval, persistence, API/SSE, CLI, graph-first web interface, structured telemetry, PostgreSQL adapters, Docker packaging, and a no-key sample scenario. The API is not yet intended for untrusted or multi-tenant deployment.
+
+See the [reproducible demo capture guide](docs/demo.md) for the two recommended screenshots; binary portfolio media is intentionally not committed yet.
 
 ## Why this exists
 
@@ -16,8 +18,11 @@ Coding agents are useful, but unconstrained model/tool loops are difficult to op
 
 ## Capabilities
 
-- **Implemented:** typed LangGraph workflow, parallel analysis, conditional repair loops, retry exhaustion, constrained repository operations, provider-neutral structured models, explicit routing, native human interrupts, SQLite/PostgreSQL persistence, restart-safe resume, lifecycle API, replayable SSE, structured logs, model/tool telemetry, installable CLI, repeatable evaluations, responsive graph-first UI, Docker Compose, and a runnable sample API.
-- **Next:** CI, security hardening, and release documentation.
+- Typed LangGraph state, parallel analysis, conditional repair loops, bounded retry exhaustion, and native human interrupts.
+- Constrained repository reads, hash-guarded atomic writes, fixed Git inspection, and shell-free command allowlists.
+- Provider-neutral LangChain structured output with visible model routing, latency, and token usage.
+- SQLite and PostgreSQL checkpoints, lifecycle projections, replayable SSE, and restart-safe resume.
+- Installable CLI, graph-first React UI, structured JSON logs, repeatable evaluations, Docker Compose, and a runnable sample API.
 
 ## Architecture
 
@@ -78,6 +83,16 @@ uv run taskpilot run --repo ./examples/sample-api \
 
 The deterministic test harness separately exercises success, repair, rejection, restart/resume, and retry exhaustion without paid model calls.
 
+## Suggested engineering tasks
+
+The no-key model implements one deterministic task so its claims can be verified exactly:
+
+```text
+Add pagination to the products endpoint and update tests
+```
+
+With `TASKPILOT_DEMO_MODE=false` and real providers configured, the sample repository also supports useful review tasks such as adding user creation and validation, introducing product caching with explicit invalidation, or extending health reporting. Provider-backed behavior remains probabilistic; review the plan and diff before approving writes.
+
 ## CLI
 
 ```bash
@@ -113,7 +128,7 @@ Representative output:
 
 ## API lifecycle
 
-The versioned FastAPI contract separates commands from observation:
+The FastAPI lifecycle contract separates commands from observation:
 
 ```text
 POST /runs
@@ -140,6 +155,32 @@ Set `VITE_TASKPILOT_API_URL` to the API base when the Vite development proxy is 
 
 Configuration is environment-driven with an optional YAML policy file. See [.env.example](.env.example) and [config.example.yaml](config.example.yaml). Secrets must be passed through the environment and must never be committed.
 
+| Concern | Environment/YAML control |
+| --- | --- |
+| Runtime | host, port, environment, demo mode |
+| Persistence | SQLite paths or PostgreSQL connection URLs |
+| Repository | allowed roots, file/context/output limits, write/execute capabilities |
+| Commands | argument-prefix allowlist and timeout |
+| Workflow | approval requirement and maximum repair attempts |
+| Models | provider definitions, responsibility assignments, ordered routing rules |
+| Observability | JSON log level and opt-in LangSmith tracing |
+
+## Model providers and routing
+
+| Provider | Configuration | Status |
+| --- | --- | --- |
+| Deterministic demo | `TASKPILOT_DEMO_MODE=true` | Implemented for the bundled pagination scenario |
+| OpenAI | `provider: openai` plus `OPENAI_API_KEY` | Implemented through LangChain |
+| Anthropic | `provider: anthropic` plus `ANTHROPIC_API_KEY` | Implemented through LangChain |
+| OpenAI-compatible | `provider: openai-compatible` plus `base_url` | Implemented; endpoint must support structured output |
+| Local inference | `provider: local`, `base_url`, and `local: true` | Implemented through an OpenAI-compatible endpoint |
+
+Routing is an ordered, validated policy. Every selection records its role, provider, model, reason, latency, and reported token usage. See [ADR 004](docs/adr/004-model-provider-abstraction.md).
+
+## Observability
+
+The API writes structured JSON logs with request or run correlation IDs. Its durable event stream distinguishes graph-node, model, repository-tool, approval, and terminal events. LangSmith tracing is opt-in via `TASKPILOT_LANGSMITH_ENABLED`; application state and logs remain authoritative when tracing is disabled.
+
 ## Security model
 
 TaskPilot AI is a developer tool, not a secure sandbox for hostile repositories. Its default tool layer enforces configured repository roots, canonical path checks, symlink and traversal defenses, command allowlists, timeouts, output limits, and separate read/write/execute permissions. Strong isolation requires running workers in disposable containers or VMs.
@@ -154,6 +195,25 @@ TaskPilot AI is a developer tool, not a secure sandbox for hostile repositories.
 - [Model provider abstraction](docs/adr/004-model-provider-abstraction.md)
 - [Repository tool security](docs/adr/005-repository-tool-security.md)
 - [Streaming strategy](docs/adr/006-streaming-strategy.md)
+- [Demo capture guide](docs/demo.md)
+- [Security policy](SECURITY.md)
+
+## Project structure
+
+```text
+apps/web/                 React, React Flow, SSE client, approval UI
+src/taskpilot/api/        FastAPI transport and public schemas
+src/taskpilot/application Run lifecycle and event normalization
+src/taskpilot/graph/      Typed LangGraph topology and routing
+src/taskpilot/nodes/      Engineering node responsibilities
+src/taskpilot/models/     LangChain providers, routing, demo model
+src/taskpilot/tools/      Constrained repository capabilities
+src/taskpilot/persistence SQLite/PostgreSQL checkpoints, runs, events
+src/taskpilot/observability Structured logging and LangSmith setup
+examples/sample-api/      Writable FastAPI demonstration repository
+tests/                    Unit, integration, routing, resume, API, CLI
+docs/                     Architecture, ADRs, evaluations, demo guide
+```
 
 ## Development
 
@@ -169,28 +229,27 @@ pnpm --filter @taskpilot/web test
 pnpm --filter @taskpilot/web build
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for workflow and commit conventions.
+The backend suite is deterministic by default; `TASKPILOT_TEST_POSTGRES_URL` enables the PostgreSQL integration test. The five required behavior scenarios are mapped to concrete tests in [docs/evaluations.md](docs/evaluations.md). Run `uv run pre-commit install` to mirror the local formatting, lint, and typing checks before each commit.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for workflow and commit conventions. Focused issues and pull requests are welcome under the [Apache 2.0 license](LICENSE).
 
 ## Limitations
 
 - Demo mode intentionally supports the bundled product-pagination task; use a configured model provider for arbitrary tasks.
+- Only the plan checkpoint is currently interrupt-driven; the policy schema reserves write/command approval flags for future graph gates.
+- The API has no built-in authentication; bind it to a trusted interface or use an authenticated reverse proxy.
 - The initial runtime targets one trusted developer per installation, not multi-tenant isolation.
 - Repository commands are processes on the host unless an external sandbox is configured.
 - Provider behavior and structured-output quality vary; capability checks and fallbacks cannot eliminate that variance.
 
 ## Roadmap
 
-1. Foundation and architecture
-2. Typed graph and deterministic routing
-3. Constrained repository tools
-4. Model abstraction and routing
-5. Implementation, validation, and repair
-6. Approval, checkpoints, and resume
-7. API and SSE
-8. CLI and evaluation scenarios
-9. Graph-first web UI
-10. Observability, PostgreSQL, Docker, and sample app
-11. CI, security hardening, and documentation polish
+- [x] Foundation, architecture, typed graph, tools, and model routing
+- [x] Repair loops, approval interrupts, checkpoints, API/SSE, and CLI
+- [x] Graph-first UI, observability, PostgreSQL, Docker, sample app, CI, and security guidance
+- [ ] Authenticated multi-user deployments and isolated worker execution
+- [ ] Object-store artifacts for long-lived full patches and validation logs
+- [ ] Additional approval gates and model-backed evaluation datasets
 
 ## License
 

@@ -9,7 +9,7 @@ CLI and web clients need live node state, tool calls, usage, approvals, and term
 
 ## Decision
 
-Normalize internal graph callbacks into a versioned append-only event schema. Persist before publishing. Expose replay plus tailing through Server-Sent Events and accept approval/rejection through ordinary HTTP. Honor `Last-Event-ID`.
+Normalize internal graph callbacks into a stable append-only event representation. Persist before publishing. Expose replay plus tailing through Server-Sent Events and accept approval/rejection through ordinary HTTP. Honor `Last-Event-ID`. Introduce an explicit API version before making incompatible schema changes.
 
 ## Alternatives considered
 

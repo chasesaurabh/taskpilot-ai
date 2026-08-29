@@ -25,6 +25,7 @@ class RepositoryToolPolicy(ToolModel):
         ".git",
         ".taskpilot",
         ".venv",
+        ".pytest_cache",
         "node_modules",
         "dist",
         "build",

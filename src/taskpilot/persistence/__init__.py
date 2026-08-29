@@ -1,4 +1,4 @@
-"""Checkpoint, run, event, and artifact persistence adapters."""
+"""Checkpoint, run projection, and event persistence adapters."""
 
 from taskpilot.persistence.checkpoints import open_sqlite_checkpointer
 

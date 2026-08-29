@@ -12,13 +12,13 @@ RUN apt-get update && \
     useradd --system --gid taskpilot --create-home taskpilot
 WORKDIR /opt/taskpilot
 
-COPY pyproject.toml README.md LICENSE ./
+COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src ./src
 COPY examples ./examples
 COPY config.example.yaml ./config.example.yaml
 RUN python -m venv .venv && \
-    pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir ".[postgres]" pytest && \
+    pip install --no-cache-dir uv==0.12.7 && \
+    uv sync --frozen --no-dev --extra postgres --extra demo --no-editable && \
     mkdir -p .taskpilot && chown -R taskpilot:taskpilot /opt/taskpilot
 
 USER taskpilot
