@@ -162,6 +162,10 @@ Set `VITE_TASKPILOT_API_URL` to the API base when the Vite development proxy is 
 
 Configuration is environment-driven with an optional YAML policy file. See [.env.example](.env.example) and [config.example.yaml](config.example.yaml). Secrets must be passed through the environment and must never be committed.
 
+The committed example is cloud-only: it demonstrates native OpenAI and Anthropic providers, a
+hosted OpenAI-compatible provider, and both mixed-provider and OpenAI-only profiles. Keep
+machine-specific endpoints in an ignored policy file rather than adding them to a tracked example.
+
 | Concern | Environment/YAML control |
 | --- | --- |
 | Runtime | host, port, environment, demo mode |
@@ -204,6 +208,11 @@ routing:
         reviewer: compatible-coder
         reporter: compatible-coder
 ```
+
+For a keyless local endpoint, use `provider: local` and `local: true`; omit `api_key_env`. Omitting
+`max_tokens` lets the server apply its own generation limit. The model context window and the
+generation-token limit are separate controls: TaskPilot still bounds repository context through
+`repository.max_context_bytes`.
 
 Profiles are validated at startup and may be selected through the web UI, API `model_profile`
 field, or CLI `--model-profile`. The selected profile is persisted with the run, survives

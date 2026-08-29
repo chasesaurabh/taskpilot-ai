@@ -34,6 +34,12 @@ def test_policy_loads_named_profiles_and_normalizes_legacy_assignments(tmp_path:
 
     assert configured.default_profile == "balanced"
     assert set(configured.profiles) == {"balanced", "openai-only"}
+    assert {config.provider for config in configured.models.values()} == {
+        "anthropic",
+        "openai",
+        "openai-compatible",
+    }
+    assert not any(config.local for config in configured.models.values())
 
     legacy = tmp_path / "legacy.yaml"
     legacy.write_text(

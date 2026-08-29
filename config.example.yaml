@@ -1,19 +1,20 @@
+# Cloud-only example. Secret values are always read from environment variables.
 models:
-  default:
+  openai-general:
     provider: openai
     model: gpt-5-mini
     api_key_env: OPENAI_API_KEY
-  planner:
+  openai-planner:
     provider: openai
     model: gpt-5-mini
     api_key_env: OPENAI_API_KEY
-  coder:
+  hosted-compatible-coder:
     provider: openai-compatible
     model: provider-coder-model
     base_url: https://provider.example.com/v1
     api_key_env: COMPATIBLE_API_KEY
     max_tokens: 8192
-  reviewer:
+  anthropic-reviewer:
     provider: anthropic
     model: claude-sonnet
     api_key_env: ANTHROPIC_API_KEY
@@ -23,20 +24,20 @@ routing:
   profiles:
     balanced:
       assignments:
-        analyst: default
-        planner: planner
-        architect: planner
-        coder: coder
-        reviewer: reviewer
-        reporter: default
+        analyst: openai-general
+        planner: openai-planner
+        architect: openai-planner
+        coder: hosted-compatible-coder
+        reviewer: anthropic-reviewer
+        reporter: openai-general
     openai-only:
       assignments:
-        analyst: default
-        planner: default
-        architect: default
-        coder: default
-        reviewer: default
-        reporter: default
+        analyst: openai-general
+        planner: openai-general
+        architect: openai-general
+        coder: openai-general
+        reviewer: openai-general
+        reporter: openai-general
 
 repository:
   allowed_roots:

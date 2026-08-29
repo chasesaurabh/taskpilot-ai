@@ -68,7 +68,7 @@ def test_live_provider_completes_the_real_workflow(
         )
         assert created.status_code == 202, created.text
         run_id = created.json()["run_id"]
-        _wait_for_status(client, run_id, "waiting_for_approval", timeout=300)
+        _wait_for_status(client, run_id, "waiting_for_approval", timeout=600)
         approved = client.post(
             f"/runs/{run_id}/approve",
             json={"actor": "live-validation@example.com"},
