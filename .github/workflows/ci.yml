@@ -16,7 +16,11 @@ concurrency:
 jobs:
   backend:
     name: Backend quality and tests
-    runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, X64, runner1]
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:17-alpine
@@ -60,7 +64,11 @@ jobs:
 
   frontend:
     name: Frontend quality and build
-    runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, X64, runner1]
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -79,7 +87,11 @@ jobs:
 
   containers:
     name: Container build
-    runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, X64, runner1]
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:
