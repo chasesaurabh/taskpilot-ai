@@ -9,7 +9,7 @@ Repository writes and command execution can be consequential, but asking for app
 
 ## Decision
 
-Interrupt once after planning, architecture review, and repository-impact analysis and before implementation. The payload must disclose files, commands, risks, and assumptions. Make write and execute approval optional policy boundaries. Persist and audit every decision.
+Interrupt once after planning, architecture review, and repository-impact analysis and before implementation. The payload must disclose files, commands, risks, and assumptions. Persist and audit every decision.
 
 ## Alternatives considered
 
@@ -19,4 +19,4 @@ Interrupt once after planning, architecture review, and repository-impact analys
 
 ## Consequences
 
-The default has a useful safety/flow balance and resumes through a framework-native interrupt. Plans must be sufficiently structured for informed approval. Deployments with stricter risk profiles can opt into additional gates.
+The default has a useful safety/flow balance and resumes through a framework-native interrupt. Plans must be sufficiently structured for informed approval. Additional gates would require explicit graph nodes and are outside v0.1.0.

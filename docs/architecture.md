@@ -66,7 +66,7 @@ The graph uses a versioned `WorkflowState` schema. Nodes return partial updates 
 
 | State area | Primary writer | Lifecycle |
 | --- | --- | --- |
-| Run/task metadata and policy snapshot | run service | Immutable after start |
+| Run/task metadata and policy snapshot | run service | Immutable after start; lifecycle status lives in the run projection |
 | Repository descriptor and context manifest | context node | Replaced when context is refreshed |
 | Task analysis and plan | analysis/planning nodes | Stable after approval unless explicitly revised |
 | Architecture and impact findings | parallel analysis nodes | Stable after join |
@@ -76,7 +76,7 @@ The graph uses a versioned `WorkflowState` schema. Nodes return partial updates 
 | Retry counters | deterministic routing nodes | Monotonic and policy bounded |
 | Review findings | review node | Latest structured review |
 | Model decisions and usage | model gateway | Append-only bounded summaries |
-| Errors and terminal outcome | node wrapper/report node | Bounded errors; outcome set once |
+| Terminal outcome | report node | Set once after deterministic outcome evaluation |
 
 Repository context stores file metadata and hashes rather than a full source snapshot. Proposed file contents remain in the checkpoint because they are needed to resume hash-guarded writes, but the API redacts those contents and exposes byte counts instead. Validation output is bounded before entering state. A separate artifact store is intentionally deferred until the project needs long-term retention of full logs or patches.
 
@@ -122,11 +122,11 @@ LangGraph checkpoints are authoritative for graph position and workflow state. T
 
 Local mode uses async SQLite adapters. Production mode uses PostgreSQL implementations for LangGraph checkpoints, run projections, and the event log while retaining their logical separation. PostgreSQL event sequences are allocated under a transaction-scoped advisory lock; lifecycle transitions remain compare-and-set operations. The run ID is also the LangGraph `thread_id`. Approval resumes the same thread with `Command(resume=...)`, so duplicate approvals or competing workers cannot resume a graph twice.
 
-Node side effects must be idempotent. A write records the expected previous hash and uses an atomic replacement. Command executions have attempt IDs. Event publication accepts a node/attempt idempotency key. A process crash therefore resumes from the last durable superstep without silently multiplying side effects.
+The application captures file hashes before model invocation and supplies them to atomic writes; the model never owns concurrency preconditions. Event publication uses idempotency keys, and approval resume is guarded by a compare-and-set lifecycle transition. These controls do not provide exactly-once side effects: a crash inside a write-capable or command node can leave work after the last checkpoint. The current release proves restart/resume at the approval boundary; broader crash recovery requires idempotent worker operations or an external durable execution boundary.
 
 ## Model abstraction and routing
 
-LangChain chat-model interfaces provide invocation, tools, structured output, and streaming. TaskPilot adds a small `ModelGateway` around those interfaces to normalize capabilities, timeouts, token usage, and errors. A configuration registry maps roles (`context`, `planner`, `architect`, `coder`, `reviewer`) to provider definitions.
+LangChain chat-model interfaces provide prompt composition, invocation, and structured output. TaskPilot adds a small `ModelGateway` around those interfaces to normalize provider construction, routing, token usage, and response errors. A configuration registry maps roles (`analyst`, `planner`, `architect`, `coder`, `reviewer`, `reporter`) to provider definitions. Repository capabilities are deliberately application-owned and are not exposed as model-selected LangChain tools.
 
 Routing is explicit policy, not hidden model selection. It can assign small/local models to context classification, coding models to change generation, and stronger reasoning models to architecture and review. Each decision is recorded with reason, provider, model, latency, and usage. This makes cost, quality, latency, and privacy tradeoffs observable.
 

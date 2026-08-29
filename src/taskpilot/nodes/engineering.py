@@ -23,6 +23,7 @@ from taskpilot.domain.models import (
     ImplementationPlan,
     ImplementationProposal,
     NodeRecord,
+    ProposedFileChange,
     RepositoryContext,
     ReviewResult,
     RunStatus,
@@ -270,17 +271,18 @@ class EngineeringNodes:
 
     def implementation(self, state: WorkflowState) -> WorkflowUpdate:
         workspace = self._workspace(state)
+        context, expected_hashes = self._proposal_context(workspace)
         call = self._models.invoke_structured(
             role=ModelRole.CODER,
             routing_context=self._routing_context(state),
             prompt=IMPLEMENTATION_PROMPT,
             variables={
                 "plan": state["plan"].model_dump_json(indent=2),
-                "context": self._context_text(workspace),
+                "context": context,
             },
             output_schema=ImplementationProposal,
         )
-        change_set = self._apply_proposal(workspace, call.output)
+        change_set = self._apply_proposal(workspace, call.output, expected_hashes)
         return WorkflowUpdate(
             proposal=call.output,
             change_set=change_set,
@@ -355,18 +357,19 @@ class EngineeringNodes:
 
     def repair(self, state: WorkflowState) -> WorkflowUpdate:
         workspace = self._workspace(state)
+        context, expected_hashes = self._proposal_context(workspace)
         call = self._models.invoke_structured(
             role=ModelRole.CODER,
             routing_context=self._routing_context(state),
             prompt=REPAIR_PROMPT,
             variables={
                 "plan": state["plan"].model_dump_json(indent=2),
-                "context": self._context_text(workspace),
+                "context": context,
                 "diagnosis": state["diagnosis"].model_dump_json(indent=2),
             },
             output_schema=ImplementationProposal,
         )
-        change_set = self._apply_proposal(workspace, call.output)
+        change_set = self._apply_proposal(workspace, call.output, expected_hashes)
         attempts = state["repair_attempts"] + 1
         return WorkflowUpdate(
             proposal=call.output,
@@ -428,17 +431,63 @@ class EngineeringNodes:
             node_history=self._record("final_report", outcome),
         )
 
+    def _proposal_context(
+        self,
+        workspace: RepositoryWorkspace,
+    ) -> tuple[str, dict[str, str]]:
+        sections: list[str] = []
+        hashes: dict[str, str] = {}
+        consumed = 0
+        for entry in workspace.list_files()[: self._config.context_file_limit]:
+            if consumed + entry.size_bytes > self._config.max_context_bytes:
+                break
+            try:
+                content = workspace.read_file(entry.path)
+            except RepositoryToolError:
+                continue
+            section = f"--- {entry.path}\n{content.content}"
+            encoded_size = len(section.encode())
+            if consumed + encoded_size > self._config.max_context_bytes:
+                break
+            sections.append(section)
+            hashes[entry.path] = content.sha256
+            consumed += encoded_size
+        return "\n\n".join(sections), hashes
+
     @staticmethod
     def _apply_proposal(
         workspace: RepositoryWorkspace,
         proposal: ImplementationProposal,
+        expected_hashes: dict[str, str],
     ) -> ChangeSet:
-        applied: list[FileChange] = []
+        normalized_changes: list[tuple[str, ProposedFileChange]] = []
+        seen: set[str] = set()
         for change in proposal.changes:
+            normalized_path = Path(change.path).as_posix().removeprefix("./")
+            if normalized_path in seen:
+                raise RepositoryToolError(
+                    f"Proposal contains the same path more than once: {normalized_path}"
+                )
+            seen.add(normalized_path)
+            expected_hash = expected_hashes.get(normalized_path)
+            if change.operation == "replace" and expected_hash is None:
+                raise RepositoryToolError(
+                    f"Replacement target was not present in the bounded proposal context: "
+                    f"{normalized_path}"
+                )
+            if change.operation == "create" and expected_hash is not None:
+                raise RepositoryToolError(
+                    f"Create target already existed in the bounded proposal context: "
+                    f"{normalized_path}"
+                )
+            normalized_changes.append((normalized_path, change))
+
+        applied: list[FileChange] = []
+        for normalized_path, change in normalized_changes:
             result = workspace.write_file(
-                change.path,
+                normalized_path,
                 change.content,
-                expected_sha256=change.expected_sha256,
+                expected_sha256=expected_hashes.get(normalized_path),
             )
             applied.append(
                 FileChange(

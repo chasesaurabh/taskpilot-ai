@@ -12,7 +12,6 @@ class ConfigModel(BaseModel):
 
 
 class ModelRole(StrEnum):
-    CONTEXT = "context"
     ANALYST = "analyst"
     PLANNER = "planner"
     ARCHITECT = "architect"
@@ -35,7 +34,6 @@ class ModelConfig(ConfigModel):
     temperature: float = Field(default=0, ge=0, le=2)
     timeout_seconds: float = Field(default=120, gt=0, le=3_600)
     supports_structured_output: bool = True
-    supports_tools: bool = True
     local: bool = False
 
     @model_validator(mode="after")

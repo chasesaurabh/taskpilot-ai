@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import os
 import subprocess
 import sys
@@ -36,12 +35,6 @@ from taskpilot.tools.types import RepositoryToolPolicy
 def _gateway(*, repair_content: str = "good\n") -> ModelGateway:
     def proposal(prompt: str) -> ImplementationProposal:
         content = repair_content if "Failure diagnosis" in prompt else "bad\n"
-        if "Failure diagnosis" not in prompt:
-            current = b"initial\n"
-        elif "--- value.txt\nstill-bad\n" in prompt:
-            current = b"still-bad\n"
-        else:
-            current = b"bad\n"
         return ImplementationProposal(
             summary="Update status value",
             changes=(
@@ -49,7 +42,6 @@ def _gateway(*, repair_content: str = "good\n") -> ModelGateway:
                     path="value.txt",
                     operation="replace",
                     content=content,
-                    expected_sha256=hashlib.sha256(current).hexdigest(),
                 ),
             ),
         )

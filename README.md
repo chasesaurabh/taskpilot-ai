@@ -161,7 +161,7 @@ Configuration is environment-driven with an optional YAML policy file. See [.env
 | Persistence | SQLite paths or PostgreSQL connection URLs |
 | Repository | allowed roots, file/context/output limits, write/execute capabilities |
 | Commands | argument-prefix allowlist and timeout |
-| Workflow | approval requirement and maximum repair attempts |
+| Workflow | plan approval requirement and maximum repair attempts |
 | Models | provider definitions, responsibility assignments, ordered routing rules |
 | Observability | JSON log level and opt-in LangSmith tracing |
 
@@ -195,6 +195,7 @@ TaskPilot AI is a developer tool, not a secure sandbox for hostile repositories.
 - [Model provider abstraction](docs/adr/004-model-provider-abstraction.md)
 - [Repository tool security](docs/adr/005-repository-tool-security.md)
 - [Streaming strategy](docs/adr/006-streaming-strategy.md)
+- [Write-precondition ownership](docs/adr/007-write-precondition-ownership.md)
 - [Demo capture guide](docs/demo.md)
 - [Security policy](SECURITY.md)
 
@@ -236,7 +237,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for workflow and commit conventions. Focu
 ## Limitations
 
 - Demo mode intentionally supports the bundled product-pagination task; use a configured model provider for arbitrary tasks.
-- Only the plan checkpoint is currently interrupt-driven; the policy schema reserves write/command approval flags for future graph gates.
+- The plan is the only approval checkpoint; additional write/command gates are not implemented.
 - The API has no built-in authentication; bind it to a trusted interface or use an authenticated reverse proxy.
 - The initial runtime targets one trusted developer per installation, not multi-tenant isolation.
 - Repository commands are processes on the host unless an external sandbox is configured.

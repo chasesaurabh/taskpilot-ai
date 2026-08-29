@@ -19,7 +19,6 @@ models:
 
 routing:
   assignments:
-    context: default
     analyst: default
     planner: planner
     architect: planner
@@ -47,8 +46,6 @@ repository:
 workflow:
   max_repair_attempts: 2
   require_plan_approval: true
-  require_command_approval: false
-  require_write_approval: false
 
 observability:
   langsmith_enabled: false

@@ -38,7 +38,6 @@ class Severity(StrEnum):
 class RunMetadata(DomainModel):
     run_id: str = Field(min_length=1)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    status: RunStatus = RunStatus.QUEUED
     state_schema_version: int = 1
 
 
@@ -48,16 +47,11 @@ class TaskRequest(DomainModel):
 
 class RepositoryDescriptor(DomainModel):
     root: str = Field(min_length=1)
-    default_branch: str | None = None
-    head_commit: str | None = None
-    is_dirty: bool = False
 
 
 class WorkflowPolicy(DomainModel):
     max_repair_attempts: int = Field(default=2, ge=0, le=10)
     require_plan_approval: bool = True
-    require_write_approval: bool = False
-    require_command_approval: bool = False
 
 
 class ContextFile(DomainModel):
@@ -71,7 +65,6 @@ class RepositoryContext(DomainModel):
     files: tuple[ContextFile, ...] = ()
     summary: str = ""
     truncated: bool = False
-    artifact_id: str | None = None
 
 
 class TaskAnalysis(DomainModel):
@@ -140,7 +133,6 @@ class FileChange(DomainModel):
     operation: str
     before_sha256: str | None = None
     after_sha256: str | None = None
-    artifact_id: str | None = None
 
 
 class ChangeSet(DomainModel):
@@ -149,16 +141,15 @@ class ChangeSet(DomainModel):
 
 
 class ProposedFileChange(DomainModel):
-    path: str
-    operation: str
-    content: str
-    expected_sha256: str | None = None
-    rationale: str = ""
+    path: str = Field(min_length=1, max_length=500)
+    operation: str = Field(pattern="^(create|replace)$")
+    content: str = Field(max_length=1_000_000)
+    rationale: str = Field(default="", max_length=4_000)
 
 
 class ImplementationProposal(DomainModel):
-    summary: str
-    changes: tuple[ProposedFileChange, ...]
+    summary: str = Field(min_length=1, max_length=4_000)
+    changes: tuple[ProposedFileChange, ...] = Field(min_length=1, max_length=25)
 
 
 class ValidationResult(DomainModel):
@@ -166,7 +157,6 @@ class ValidationResult(DomainModel):
     command: tuple[str, ...]
     exit_code: int | None = None
     duration_ms: int = Field(default=0, ge=0)
-    output_artifact_id: str | None = None
     summary: str = ""
 
 
@@ -190,13 +180,6 @@ class ModelDecision(DomainModel):
     latency_ms: int = Field(default=0, ge=0)
     input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
-
-
-class ErrorRecord(DomainModel):
-    node: str
-    error_type: str
-    message: str
-    retryable: bool = False
 
 
 class NodeRecord(DomainModel):

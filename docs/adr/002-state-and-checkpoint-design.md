@@ -9,7 +9,7 @@ Graph execution needs complete resumable state, while APIs need efficient run qu
 
 ## Decision
 
-Use a versioned typed graph state and LangGraph checkpointer as the execution authority. Maintain a run projection and append-only event log for product queries. Keep repository context and command output bounded; reserve immutable artifact identifiers in domain models for a later object-store adapter.
+Use a versioned typed graph state and LangGraph checkpointer as the execution authority. Maintain a run projection and append-only event log for product queries. Keep repository context and command output bounded. Add an artifact boundary only when long-term full-patch or log retention is implemented.
 
 ## Alternatives considered
 

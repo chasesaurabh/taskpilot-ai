@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from taskpilot.domain.models import TaskAnalysis
+from taskpilot.domain.models import ImplementationProposal, ProposedFileChange, TaskAnalysis
 from taskpilot.models.config import (
     ModelConfig,
     ModelRole,
@@ -186,4 +186,22 @@ def test_gateway_rejects_invalid_structured_envelope() -> None:
             prompt=TASK_ANALYSIS_PROMPT,
             variables={"task": "Task", "context": "Context"},
             output_schema=TaskAnalysis,
+        )
+
+
+def test_model_proposals_describe_intent_without_owning_write_hashes() -> None:
+    schema = ProposedFileChange.model_json_schema()
+
+    assert "expected_sha256" not in schema["properties"]
+    with pytest.raises(ValueError, match="at most 25"):
+        ImplementationProposal(
+            summary="Too many changes",
+            changes=tuple(
+                ProposedFileChange(
+                    path=f"file-{index}.txt",
+                    operation="create",
+                    content="value",
+                )
+                for index in range(26)
+            ),
         )

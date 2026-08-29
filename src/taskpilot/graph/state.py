@@ -9,7 +9,6 @@ from taskpilot.domain.models import (
     AnalysisReport,
     ApprovalDecision,
     ChangeSet,
-    ErrorRecord,
     FailureDiagnosis,
     FinalReport,
     ImplementationPlan,
@@ -53,7 +52,6 @@ class WorkflowState(TypedDict, total=False):
     review: ReviewResult
     final_report: FinalReport
     model_decisions: Annotated[list[ModelDecision], operator.add]
-    errors: Annotated[list[ErrorRecord], operator.add]
     node_history: Annotated[list[NodeRecord], operator.add]
 
 
@@ -75,7 +73,6 @@ class WorkflowUpdate(TypedDict, total=False):
     review: ReviewResult
     final_report: FinalReport
     model_decisions: list[ModelDecision]
-    errors: list[ErrorRecord]
     node_history: list[NodeRecord]
 
 
@@ -96,6 +93,5 @@ def create_initial_state(
         approval=ApprovalDecision(),
         repair_attempts=0,
         model_decisions=[],
-        errors=[],
         node_history=[],
     )

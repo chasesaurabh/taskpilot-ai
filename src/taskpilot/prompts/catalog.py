@@ -50,8 +50,10 @@ REPOSITORY_IMPACT_PROMPT = _prompt(
 
 IMPLEMENTATION_PROMPT = _prompt(
     "implementation",
-    "Propose complete file changes that satisfy the approved plan. Never emit paths outside the "
-    "repository.",
+    "Propose complete file changes that satisfy the approved plan. Use operation='replace' only "
+    "for files present in the supplied context and operation='create' only for new files. Never "
+    "emit paths outside the repository. Repository version preconditions are owned by the "
+    "application; do not calculate hashes.",
     "Approved plan:\n{plan}\n\nRelevant files:\n{context}",
 )
 
@@ -64,7 +66,8 @@ FAILURE_ANALYSIS_PROMPT = _prompt(
 REPAIR_PROMPT = _prompt(
     "repair",
     "Propose the smallest complete file changes that address the diagnosed failure. Preserve "
-    "correct prior work and never emit paths outside the repository.",
+    "correct prior work, use create/replace consistently with the supplied context, and never "
+    "emit paths outside the repository. Do not calculate repository hashes.",
     "Plan:\n{plan}\n\nCurrent files:\n{context}\n\nFailure diagnosis:\n{diagnosis}",
 )
 

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import re
 import sys
 from pathlib import Path
 
@@ -118,7 +116,6 @@ def pagination_demo_model() -> DeterministicModel:
                     path="sample_api/app.py",
                     operation="replace",
                     content=PAGINATED_APP,
-                    expected_sha256=_context_hash(prompt, "sample_api/app.py"),
                     rationale=(
                         "Expose bounded pagination metadata without changing product records."
                     ),
@@ -127,7 +124,6 @@ def pagination_demo_model() -> DeterministicModel:
                     path="tests/test_app.py",
                     operation="replace",
                     content=PAGINATED_TESTS,
-                    expected_sha256=_context_hash(prompt, "tests/test_app.py"),
                     rationale="Verify slices, metadata, health behavior, and invalid limits.",
                 ),
             ),
@@ -185,10 +181,3 @@ def pagination_demo_model() -> DeterministicModel:
             ),
         }
     )
-
-
-def _context_hash(prompt: str, path: str) -> str:
-    match = re.search(rf"--- {re.escape(path)}\n(.*?)(?=\n\n--- |\Z)", prompt, re.DOTALL)
-    if match is None:
-        raise ValueError(f"Bundled demo requires repository context for {path}")
-    return hashlib.sha256(match.group(1).encode()).hexdigest()
