@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from typing import Any
 
 from langchain_core.messages import AIMessage
+from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel
 
 from taskpilot.domain.models import ModelDecision
@@ -15,6 +17,16 @@ from taskpilot.models.errors import ModelConfigurationError, ModelResponseError
 from taskpilot.models.factory import ModelFactory, StructuredChatModel
 from taskpilot.models.routing import ModelRouter
 from taskpilot.prompts.catalog import PromptSpec
+
+_JSON_MODE_SCHEMA_PROMPT = ChatPromptTemplate.from_messages(
+    (
+        (
+            "system",
+            "Return exactly one JSON object matching this JSON Schema. Do not rename fields, "
+            "add wrapper keys, or include prose outside the object.\n{taskpilot_output_schema}",
+        ),
+    )
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,8 +100,19 @@ class ModelGateway:
                     include_raw=True,
                     method=method,
                 )
-            chain = prompt.template | structured_model
-            response = chain.invoke(variables)
+            effective_prompt = prompt.template
+            invocation_variables = variables
+            if method == "json_mode":
+                effective_prompt = prompt.template + _JSON_MODE_SCHEMA_PROMPT
+                invocation_variables = {
+                    **variables,
+                    "taskpilot_output_schema": json.dumps(
+                        output_schema.model_json_schema(),
+                        separators=(",", ":"),
+                    ),
+                }
+            chain = effective_prompt | structured_model
+            response = chain.invoke(invocation_variables)
         except ModelResponseError:
             raise
         except Exception as exc:

@@ -78,7 +78,13 @@ class TaskAnalysis(DomainModel):
 class PlanStep(DomainModel):
     order: int = Field(ge=1)
     description: str
-    expected_files: tuple[str, ...] = ()
+    expected_files: tuple[str, ...] = Field(
+        default=(),
+        description=(
+            "Repository-relative files this step will create or replace. Leave empty only when "
+            "the step has no file effects."
+        ),
+    )
     validation: tuple[str, ...] = ()
 
 
@@ -144,13 +150,23 @@ class ChangeSet(DomainModel):
 class ProposedFileChange(DomainModel):
     path: str = Field(min_length=1, max_length=500)
     operation: str = Field(pattern="^(create|replace)$")
-    content: str = Field(max_length=1_000_000)
+    content: str = Field(
+        max_length=1_000_000,
+        description="Complete resulting file content, not a patch or partial edit.",
+    )
     rationale: str = Field(default="", max_length=4_000)
 
 
 class ImplementationProposal(DomainModel):
     summary: str = Field(min_length=1, max_length=4_000)
-    changes: tuple[ProposedFileChange, ...] = Field(min_length=1, max_length=25)
+    changes: tuple[ProposedFileChange, ...] = Field(
+        min_length=1,
+        max_length=25,
+        description=(
+            "Complete file changes with each repository path appearing at most once. Combine all "
+            "edits to the same path into one change."
+        ),
+    )
 
 
 class ValidationResult(DomainModel):

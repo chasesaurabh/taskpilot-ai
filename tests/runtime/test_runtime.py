@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import shutil
+import sys
 import time
 from pathlib import Path
 
@@ -12,9 +14,25 @@ from taskpilot.configuration import AppSettings, load_policy, model_policy, repo
 from taskpilot.domain.models import TaskAnalysis
 from taskpilot.models.errors import ModelConfigurationError
 from taskpilot.models.scenario import pagination_demo_model
-from taskpilot.runtime import create_runtime_app
+from taskpilot.runtime import _ensure_runtime_bin_on_path, create_runtime_app
 
 PROJECT_ROOT = Path(__file__).parents[2]
+
+
+def test_runtime_interpreter_directory_is_available_to_validation_commands(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = tmp_path / "runtime" / "python.exe"
+    monkeypatch.setattr(sys, "executable", str(runtime))
+    monkeypatch.setenv("PATH", str(tmp_path / "other"))
+
+    _ensure_runtime_bin_on_path()
+    _ensure_runtime_bin_on_path()
+
+    entries = os.environ["PATH"].split(os.pathsep)
+    assert entries[0] == str(runtime.parent)
+    assert entries.count(str(runtime.parent)) == 1
 
 
 def test_environment_repository_roots_override_yaml(tmp_path: Path) -> None:

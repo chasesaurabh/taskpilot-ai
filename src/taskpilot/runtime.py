@@ -33,6 +33,7 @@ def create_runtime_app(settings: AppSettings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+        _ensure_runtime_bin_on_path()
         policy = load_policy(resolved_settings.policy_file)
         configure_observability(
             log_level=resolved_settings.log_level or policy.observability.log_level,
@@ -42,8 +43,6 @@ def create_runtime_app(settings: AppSettings | None = None) -> FastAPI:
         )
         tools = repository_policy(resolved_settings, policy)
         if resolved_settings.demo_mode:
-            runtime_bin = str(Path(sys.executable).parent)
-            os.environ["PATH"] = f"{runtime_bin}{os.pathsep}{os.environ.get('PATH', '')}"
             demo_command = (Path(sys.executable).name, "-m", "pytest")
             tools = tools.model_copy(
                 update={"allowed_commands": (*tools.allowed_commands, demo_command)}
@@ -89,6 +88,17 @@ def create_runtime_app(settings: AppSettings | None = None) -> FastAPI:
             await store.close()
 
     return create_app(lifespan=lifespan)
+
+
+def _ensure_runtime_bin_on_path() -> None:
+    runtime_bin = str(Path(sys.executable).parent)
+    current = os.environ.get("PATH", "")
+    normalized_runtime = os.path.normcase(os.path.abspath(runtime_bin))
+    normalized_entries = {
+        os.path.normcase(os.path.abspath(entry)) for entry in current.split(os.pathsep) if entry
+    }
+    if normalized_runtime not in normalized_entries:
+        os.environ["PATH"] = f"{runtime_bin}{os.pathsep}{current}"
 
 
 async def _open_store(database_url: str) -> ClosableRunStore:

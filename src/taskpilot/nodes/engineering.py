@@ -194,10 +194,15 @@ class EngineeringNodes:
             },
             output_schema=ImplementationPlan,
         )
+        plan = call.output.model_copy(
+            update={
+                "proposed_commands": self._select_validation_commands(call.output.proposed_commands)
+            }
+        )
         return WorkflowUpdate(
-            plan=call.output,
+            plan=plan,
             model_decisions=[call.decision],
-            node_history=self._record("planning", call.output.summary),
+            node_history=self._record("planning", plan.summary),
         )
 
     def architecture_review(self, state: WorkflowState) -> WorkflowUpdate:
@@ -300,7 +305,7 @@ class EngineeringNodes:
 
     def testing(self, state: WorkflowState) -> WorkflowUpdate:
         workspace = self._workspace(state)
-        commands = state["plan"].proposed_commands or self._config.default_validation_commands
+        commands = self._select_validation_commands(state["plan"].proposed_commands)
         if not commands:
             validation = ValidationResult(
                 passed=False,
@@ -345,6 +350,21 @@ class EngineeringNodes:
             validation=validation,
             node_history=self._record("testing", status),
         )
+
+    def _select_validation_commands(
+        self,
+        proposed: tuple[tuple[str, ...], ...],
+    ) -> tuple[tuple[str, ...], ...]:
+        allowed = tuple(
+            command
+            for command in proposed
+            if command
+            and any(
+                command[: len(prefix)] == prefix
+                for prefix in self._repository_policy.allowed_commands
+            )
+        )
+        return allowed or self._config.default_validation_commands
 
     def failure_analysis(self, state: WorkflowState) -> WorkflowUpdate:
         call = self._models.invoke_structured(
@@ -478,17 +498,6 @@ class EngineeringNodes:
                     f"Proposal contains the same path more than once: {normalized_path}"
                 )
             seen.add(normalized_path)
-            expected_hash = expected_hashes.get(normalized_path)
-            if change.operation == "replace" and expected_hash is None:
-                raise RepositoryToolError(
-                    f"Replacement target was not present in the bounded proposal context: "
-                    f"{normalized_path}"
-                )
-            if change.operation == "create" and expected_hash is not None:
-                raise RepositoryToolError(
-                    f"Create target already existed in the bounded proposal context: "
-                    f"{normalized_path}"
-                )
             normalized_changes.append((normalized_path, change))
 
         applied: list[FileChange] = []

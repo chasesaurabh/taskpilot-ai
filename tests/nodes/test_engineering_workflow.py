@@ -245,6 +245,31 @@ def test_proposal_is_fully_validated_before_the_first_repository_write(tmp_path:
     assert (repository / "value.txt").read_bytes() == b"initial\n"
 
 
+def test_repository_state_determines_create_or_replace_operation(tmp_path: Path) -> None:
+    repository = _repository(tmp_path)
+    workspace = RepositoryWorkspace(
+        repository,
+        RepositoryToolPolicy(allowed_roots=(tmp_path,), allow_writes=True),
+    )
+    proposal = ImplementationProposal(
+        summary="Normalize advisory model operations",
+        changes=(
+            ProposedFileChange(path="value.txt", operation="create", content="updated\n"),
+            ProposedFileChange(path="new.txt", operation="replace", content="new\n"),
+        ),
+    )
+
+    change_set = EngineeringNodes._apply_proposal(
+        workspace,
+        proposal,
+        {"value.txt": hashlib.sha256(b"initial\n").hexdigest()},
+    )
+
+    assert [change.operation for change in change_set.changes] == ["replace", "create"]
+    assert (repository / "value.txt").read_text() == "updated\n"
+    assert (repository / "new.txt").read_text() == "new\n"
+
+
 def test_testing_uses_policy_defaults_when_the_plan_omits_commands(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -272,6 +297,43 @@ def test_testing_uses_policy_defaults_when_the_plan_omits_commands(
     state["plan"] = ImplementationPlan(
         summary="Use configured validation",
         steps=(PlanStep(order=1, description="Validate"),),
+    )
+
+    update = nodes.testing(state)
+
+    assert update["validation"].passed is True
+    assert update["validation"].command == command
+    assert "validated" in update["validation"].summary
+
+
+def test_testing_uses_policy_defaults_when_model_commands_are_not_allowlisted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = _repository(tmp_path)
+    executable = Path(sys.executable).name
+    command = (executable, "-c", "print('validated')")
+    monkeypatch.setenv(
+        "PATH", f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}"
+    )
+    nodes = EngineeringNodes(
+        models=_gateway(),
+        repository_policy=RepositoryToolPolicy(
+            allowed_roots=(tmp_path,),
+            allow_commands=True,
+            allowed_commands=((executable, "-c"),),
+        ),
+        config=EngineeringNodesConfig(default_validation_commands=(command,)),
+    )
+    state = create_initial_state(
+        run_id="invalid-model-command",
+        task="Validate the repository",
+        repository_root=str(repository),
+    )
+    state["plan"] = ImplementationPlan(
+        summary="Use malformed model command",
+        steps=(PlanStep(order=1, description="Validate"),),
+        proposed_commands=((f"{executable} -c print('wrong shape')", "description"),),
     )
 
     update = nodes.testing(state)
