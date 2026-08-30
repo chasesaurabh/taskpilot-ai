@@ -60,7 +60,10 @@ def create_runtime_app(settings: AppSettings | None = None) -> FastAPI:
         nodes = EngineeringNodes(
             models=gateway,
             repository_policy=tools,
-            config=EngineeringNodesConfig(max_context_bytes=policy.repository.max_context_bytes),
+            config=EngineeringNodesConfig(
+                max_context_bytes=policy.repository.max_context_bytes,
+                default_validation_commands=policy.repository.validation_commands,
+            ),
         )
         store = await _open_store(resolved_settings.database_url)
         try:

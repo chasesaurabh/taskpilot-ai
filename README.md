@@ -171,7 +171,7 @@ machine-specific endpoints in an ignored policy file rather than adding them to 
 | Runtime | host, port, environment, demo mode |
 | Persistence | SQLite paths or PostgreSQL connection URLs |
 | Repository | allowed roots, file/context/output limits, write/execute capabilities |
-| Commands | argument-prefix allowlist and timeout |
+| Commands | argument-prefix allowlist, default validation commands, and timeout |
 | Workflow | plan approval requirement and maximum repair attempts |
 | Models | named profiles, provider definitions/options, role assignments, ordered routing rules |
 | Observability | JSON log level and opt-in LangSmith tracing |
@@ -195,6 +195,8 @@ models:
     model: provider-model-name
     base_url: https://provider.example.com/v1
     api_key_env: COMPATIBLE_API_KEY
+    structured_output_method: json_schema
+    structured_output_strict: false
 
 routing:
   default_profile: balanced

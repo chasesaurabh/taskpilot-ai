@@ -150,6 +150,15 @@ def test_compatible_provider_requires_base_url() -> None:
         ModelConfig(provider="openai-compatible", model="coder", base_url="provider/v1")
 
 
+def test_structured_output_strict_requires_json_schema_method() -> None:
+    with pytest.raises(ValueError, match="requires structured_output_method=json_schema"):
+        ModelConfig(
+            provider="openai",
+            model="planner",
+            structured_output_strict=True,
+        )
+
+
 def test_factory_normalizes_local_provider_and_custom_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -298,6 +307,31 @@ class FailingProviderModel:
         return RunnableLambda(lambda _: (_ for _ in ()).throw(RuntimeError("secret detail")))
 
 
+class MethodCapturingModel:
+    def __init__(self) -> None:
+        self.method: str | None = None
+        self.schema: type[BaseModel] | dict[str, Any] | None = None
+
+    def with_structured_output(
+        self,
+        schema: type[BaseModel] | dict[str, Any],
+        *,
+        include_raw: bool = False,
+        method: str | None = None,
+    ) -> Any:
+        from langchain_core.runnables import RunnableLambda
+
+        self.method = method
+        self.schema = schema
+        return RunnableLambda(
+            lambda _: {
+                "parsed": {"objective": "Captured structured output method"},
+                "raw": None,
+                "parsing_error": None,
+            }
+        )
+
+
 def test_gateway_rejects_invalid_structured_envelope() -> None:
     gateway = ModelGateway(
         ModelRouter(_policy()),
@@ -312,6 +346,39 @@ def test_gateway_rejects_invalid_structured_envelope() -> None:
             variables={"task": "Task", "context": "Context"},
             output_schema=TaskAnalysis,
         )
+
+
+def test_gateway_forwards_configured_structured_output_method() -> None:
+    model = MethodCapturingModel()
+    config = ModelConfig(
+        provider="openai-compatible",
+        model="compatible",
+        base_url="https://provider.example/v1",
+        structured_output_method="json_schema",
+        structured_output_strict=False,
+    )
+    gateway = ModelGateway(
+        ModelRouter(
+            ModelRoutingPolicy(
+                models={"compatible": config},
+                profiles={"default": ModelProfile(assignments={ModelRole.ANALYST: "compatible"})},
+            )
+        ),
+        DeterministicModelFactory(model),
+    )
+
+    call = gateway.invoke_structured(
+        role=ModelRole.ANALYST,
+        routing_context=RoutingContext(),
+        prompt=TASK_ANALYSIS_PROMPT,
+        variables={"task": "Task", "context": "Context"},
+        output_schema=TaskAnalysis,
+    )
+
+    assert call.output.objective == "Captured structured output method"
+    assert model.method == "json_schema"
+    assert isinstance(model.schema, dict)
+    assert model.schema["strict"] is False
 
 
 @pytest.mark.parametrize(

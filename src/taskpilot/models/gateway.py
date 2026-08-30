@@ -67,10 +67,28 @@ class ModelGateway:
 
         started = time.monotonic()
         try:
-            chain = prompt.template | model.with_structured_output(
-                output_schema,
-                include_raw=True,
-            )
+            method = selection.config.structured_output_method
+            schema: type[BaseModel] | dict[str, Any] = output_schema
+            validate_parsed_dict = False
+            if method == "json_schema" and selection.config.structured_output_strict is not None:
+                schema = {
+                    "name": output_schema.__name__,
+                    "strict": selection.config.structured_output_strict,
+                    "schema": output_schema.model_json_schema(),
+                }
+                validate_parsed_dict = True
+            if method is None:
+                structured_model = model.with_structured_output(
+                    schema,
+                    include_raw=True,
+                )
+            else:
+                structured_model = model.with_structured_output(
+                    schema,
+                    include_raw=True,
+                    method=method,
+                )
+            chain = prompt.template | structured_model
             response = chain.invoke(variables)
         except ModelResponseError:
             raise
@@ -85,10 +103,19 @@ class ModelGateway:
         parsing_error = response.get("parsing_error")
         if parsing_error is not None:
             raise ModelResponseError(f"Structured response parsing failed: {parsing_error}")
-        parsed = response.get("parsed")
-        if not isinstance(parsed, output_schema):
+        parsed_response = response.get("parsed")
+        if validate_parsed_dict:
+            try:
+                parsed = output_schema.model_validate(parsed_response)
+            except ValueError as exc:
+                raise ModelResponseError(
+                    f"Structured response did not match {output_schema.__name__}"
+                ) from exc
+        elif isinstance(parsed_response, output_schema):
+            parsed = parsed_response
+        else:
             raise ModelResponseError(
-                f"Expected {output_schema.__name__}, received {type(parsed).__name__}"
+                f"Expected {output_schema.__name__}, received {type(parsed_response).__name__}"
             )
 
         input_tokens: int | None = None

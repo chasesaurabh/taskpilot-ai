@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from taskpilot.domain.models import WorkflowPolicy
@@ -65,6 +65,23 @@ class RepositoryPolicyConfig(BaseModel):
     command_timeout_seconds: float = Field(default=120, gt=0, le=3_600)
     max_command_output_bytes: int = Field(default=1_048_576, ge=1)
     allowed_commands: tuple[tuple[str, ...], ...] = ()
+    validation_commands: tuple[tuple[str, ...], ...] = ()
+
+    @model_validator(mode="after")
+    def validate_default_commands(self) -> RepositoryPolicyConfig:
+        if self.validation_commands and not self.allow_commands:
+            raise ValueError("validation_commands require repository command execution")
+        for prefix in self.allowed_commands:
+            if not prefix or any(not argument or "\x00" in argument for argument in prefix):
+                raise ValueError("allowed_commands must contain non-empty argument prefixes")
+        for command in self.validation_commands:
+            if not command or any(not argument or "\x00" in argument for argument in command):
+                raise ValueError("validation_commands must contain non-empty arguments")
+            if not any(command[: len(prefix)] == prefix for prefix in self.allowed_commands):
+                raise ValueError(
+                    "Each validation command must match an allowed_commands argument prefix"
+                )
+        return self
 
 
 class ObservabilityConfig(BaseModel):

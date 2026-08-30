@@ -5,6 +5,7 @@ models:
     api_key_env: OPENAI_API_KEY
     temperature: 0
     timeout_seconds: 180
+    structured_output_method: json_schema
 
 routing:
   default_profile: primary
@@ -30,6 +31,8 @@ repository:
   allowed_commands:
     - [python, -m, pytest]
     - [python.exe, -m, pytest]
+  validation_commands:
+    - [python, -m, pytest]
 
 workflow:
   max_repair_attempts: 2

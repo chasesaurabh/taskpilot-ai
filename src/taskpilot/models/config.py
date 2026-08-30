@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import re
 from enum import StrEnum
+from typing import Literal
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
 _ENVIRONMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _HEADER_NAME = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+
+StructuredOutputMethod = Literal["function_calling", "json_mode", "json_schema"]
 
 
 class ConfigModel(BaseModel):
@@ -43,6 +46,8 @@ class ModelConfig(ConfigModel):
     headers_from_env: dict[str, str] = Field(default_factory=dict)
     extra_body: dict[str, JsonValue] = Field(default_factory=dict)
     supports_structured_output: bool = True
+    structured_output_method: StructuredOutputMethod | None = None
+    structured_output_strict: bool | None = None
     local: bool = False
 
     @field_validator("api_key_env", "organization_env")
@@ -75,6 +80,13 @@ class ModelConfig(ConfigModel):
     def validate_compatible_endpoint(self) -> ModelConfig:
         if self.provider in {"openai-compatible", "local"} and not self.base_url:
             raise ValueError(f"provider '{self.provider}' requires base_url")
+        if (
+            self.structured_output_strict is not None
+            and self.structured_output_method != "json_schema"
+        ):
+            raise ValueError(
+                "structured_output_strict requires structured_output_method=json_schema"
+            )
         return self
 
 
