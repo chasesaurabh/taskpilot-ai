@@ -15,6 +15,7 @@ from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from taskpilot.domain.models import ApprovalAction, RunStatus, WorkflowPolicy
 from taskpilot.graph.state import create_initial_state
+from taskpilot.models.errors import ModelConfigurationError
 from taskpilot.persistence.protocols import RunStore
 from taskpilot.persistence.runs import (
     RunConflictError,
@@ -33,10 +34,16 @@ class RunService:
         graph: Any,
         store: RunStore,
         repository_policy: RepositoryToolPolicy,
+        model_profiles: tuple[str, ...] = ("default",),
+        default_model_profile: str = "default",
     ) -> None:
         self._graph = graph
         self.store = store
         self._repository_policy = repository_policy
+        self.model_profiles = tuple(sorted(model_profiles))
+        self.default_model_profile = default_model_profile
+        if self.default_model_profile not in self.model_profiles:
+            raise ValueError("The default model profile must be available")
         self._tasks: set[asyncio.Task[None]] = set()
 
     async def start_run(
@@ -46,6 +53,13 @@ class RunService:
         repository: str,
         policy: WorkflowPolicy,
     ) -> RunRecord:
+        selected_profile = policy.model_profile or self.default_model_profile
+        if selected_profile not in self.model_profiles:
+            available = ", ".join(self.model_profiles)
+            raise ModelConfigurationError(
+                f"Unknown model profile '{selected_profile}'. Available profiles: {available}"
+            )
+        policy = policy.model_copy(update={"model_profile": selected_profile})
         workspace = RepositoryWorkspace(Path(repository), self._repository_policy)
         run_id = str(uuid4())
         await self.store.create_run(
@@ -57,7 +71,11 @@ class RunService:
         await self.store.append_event(
             run_id,
             "run.created",
-            data={"task": task, "repository": str(workspace.root)},
+            data={
+                "task": task,
+                "repository": str(workspace.root),
+                "model_profile": selected_profile,
+            },
             idempotency_key="run.created",
         )
         record = await self.store.transition(

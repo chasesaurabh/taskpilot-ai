@@ -103,7 +103,8 @@ pnpm install && pnpm --filter @taskpilot/web dev # terminal 2
 ```bash
 taskpilot run \
   --repo ./examples/sample-api \
-  --task "Add pagination to the products endpoint and update tests"
+  --task "Add pagination to the products endpoint and update tests" \
+  --model-profile balanced
 ```
 
 Use `--approval ask` for an interactive gate, `--approval approve` for a trusted demo, or `--approval stop` to leave the durable run waiting. A stopped run can be resumed from any client:
@@ -137,6 +138,7 @@ The FastAPI lifecycle contract separates commands from observation:
 
 ```text
 POST /runs
+GET  /model-profiles
 GET  /runs/{run_id}
 GET  /runs/{run_id}/events     # SSE; honors Last-Event-ID
 POST /runs/{run_id}/approve
@@ -160,6 +162,10 @@ Set `VITE_TASKPILOT_API_URL` to the API base when the Vite development proxy is 
 
 Configuration is environment-driven with an optional YAML policy file. See [.env.example](.env.example) and [config.example.yaml](config.example.yaml). Secrets must be passed through the environment and must never be committed.
 
+The committed example is cloud-only: it demonstrates native OpenAI and Anthropic providers, a
+hosted OpenAI-compatible provider, and both mixed-provider and OpenAI-only profiles. Keep
+machine-specific endpoints in an ignored policy file rather than adding them to a tracked example.
+
 | Concern | Environment/YAML control |
 | --- | --- |
 | Runtime | host, port, environment, demo mode |
@@ -167,7 +173,7 @@ Configuration is environment-driven with an optional YAML policy file. See [.env
 | Repository | allowed roots, file/context/output limits, write/execute capabilities |
 | Commands | argument-prefix allowlist and timeout |
 | Workflow | plan approval requirement and maximum repair attempts |
-| Models | provider definitions, responsibility assignments, ordered routing rules |
+| Models | named profiles, provider definitions/options, role assignments, ordered routing rules |
 | Observability | JSON log level and opt-in LangSmith tracing |
 
 ## Model providers and routing
@@ -180,7 +186,43 @@ Configuration is environment-driven with an optional YAML policy file. See [.env
 | OpenAI-compatible | `provider: openai-compatible` plus `base_url` | Implemented; endpoint must support structured output |
 | Local inference | `provider: local`, `base_url`, and `local: true` | Implemented through an OpenAI-compatible endpoint |
 
-Routing is an ordered, validated policy. Every selection records its role, provider, model, reason, latency, and reported token usage. See [ADR 004](docs/adr/004-model-provider-abstraction.md).
+An OpenAI-compatible profile needs only a model name, endpoint, and environment-backed key:
+
+```yaml
+models:
+  compatible-coder:
+    provider: openai-compatible
+    model: provider-model-name
+    base_url: https://provider.example.com/v1
+    api_key_env: COMPATIBLE_API_KEY
+
+routing:
+  default_profile: balanced
+  profiles:
+    balanced:
+      assignments:
+        analyst: compatible-coder
+        planner: compatible-coder
+        architect: compatible-coder
+        coder: compatible-coder
+        reviewer: compatible-coder
+        reporter: compatible-coder
+```
+
+For a keyless local endpoint, use `provider: local` and `local: true`; omit `api_key_env`. Omitting
+`max_tokens` lets the server apply its own generation limit. The model context window and the
+generation-token limit are separate controls: TaskPilot still bounds repository context through
+`repository.max_context_bytes`.
+
+Profiles are validated at startup and may be selected through the web UI, API `model_profile`
+field, or CLI `--model-profile`. The selected profile is persisted with the run, survives
+checkpoint resume, and appears in model-decision telemetry. Optional `max_tokens`,
+`organization_env`, `headers_from_env`, and `extra_body` fields cover common compatible-provider
+requirements without placing secrets in YAML. Every configured profile must assign all six roles
+and every endpoint must support the structured-output behavior used by LangChain.
+
+Routing remains ordered and deterministic. See [ADR 004](docs/adr/004-model-provider-abstraction.md)
+and [ADR 008](docs/adr/008-model-profiles-and-provider-options.md).
 
 ## Observability
 
@@ -195,6 +237,7 @@ TaskPilot AI is a developer tool, not a secure sandbox for hostile repositories.
 - [Architecture](docs/architecture.md)
 - [LangGraph and LangChain design](docs/langgraph-design.md)
 - [Evaluation scenarios](docs/evaluations.md)
+- [Self-hosted GitHub Actions runner](docs/self-hosted-runner.md)
 - [Live-model validation](docs/live-model-validation.md)
 - [Why LangGraph](docs/adr/001-why-langgraph.md)
 - [State and checkpoint design](docs/adr/002-state-and-checkpoint-design.md)
@@ -203,6 +246,7 @@ TaskPilot AI is a developer tool, not a secure sandbox for hostile repositories.
 - [Repository tool security](docs/adr/005-repository-tool-security.md)
 - [Streaming strategy](docs/adr/006-streaming-strategy.md)
 - [Write-precondition ownership](docs/adr/007-write-precondition-ownership.md)
+- [Model profiles and provider options](docs/adr/008-model-profiles-and-provider-options.md)
 - [Demo capture guide](docs/demo.md)
 - [Security policy](SECURITY.md)
 - [v0.1.0 security review](docs/security-review.md)

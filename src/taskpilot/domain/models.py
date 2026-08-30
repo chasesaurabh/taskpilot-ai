@@ -52,6 +52,7 @@ class RepositoryDescriptor(DomainModel):
 class WorkflowPolicy(DomainModel):
     max_repair_attempts: int = Field(default=2, ge=0, le=10)
     require_plan_approval: bool = True
+    model_profile: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class ContextFile(DomainModel):
@@ -176,6 +177,7 @@ class ModelDecision(DomainModel):
     role: str
     provider: str
     model: str
+    profile: str = "default"
     reason: str
     latency_ms: int = Field(default=0, ge=0)
     input_tokens: int | None = Field(default=None, ge=0)

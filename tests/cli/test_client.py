@@ -55,11 +55,13 @@ def test_client_creates_run_replays_events_and_sends_decision() -> None:
             task="change",
             max_repair_attempts=2,
             require_approval=True,
+            model_profile="balanced",
         )
         client.decide("run-1", action="approve", actor="tester")
         events = list(client.events("run-1", after=3))
 
     assert created["run_id"] == "run-1"
+    assert json.loads(requests[0].content)["model_profile"] == "balanced"
     assert events[0].event_type == "run.completed"
     assert requests[-1].headers["Last-Event-ID"] == "3"
 

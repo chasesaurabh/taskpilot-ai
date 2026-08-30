@@ -39,6 +39,10 @@ def run(
     task: Annotated[str, typer.Option("--task", help="Engineering outcome to deliver.")],
     api_url: Annotated[str, typer.Option(envvar="TASKPILOT_API_URL")] = DEFAULT_API_URL,
     max_repairs: Annotated[int, typer.Option(min=0, max=10)] = 2,
+    model_profile: Annotated[
+        str | None,
+        typer.Option("--model-profile", help="Named server-side model routing profile."),
+    ] = None,
     approval: Annotated[ApprovalMode, typer.Option()] = ApprovalMode.ASK,
     actor: Annotated[str, typer.Option(envvar="TASKPILOT_ACTOR")] = "local-developer",
 ) -> None:
@@ -51,6 +55,7 @@ def run(
                 task=task,
                 max_repair_attempts=max_repairs,
                 require_approval=True,
+                model_profile=model_profile,
             )
             run_id = str(record["run_id"])
             console.print(f"[bold]TaskPilot run[/bold] {run_id}")

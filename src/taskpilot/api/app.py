@@ -13,9 +13,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
-from taskpilot.api.schemas import ApprovalRequestBody, CreateRunRequest
+from taskpilot.api.schemas import ApprovalRequestBody, CreateRunRequest, ModelProfilesResponse
 from taskpilot.application.runs import RunService
 from taskpilot.domain.models import ApprovalAction, WorkflowPolicy
+from taskpilot.models.errors import ModelConfigurationError
 from taskpilot.persistence.runs import (
     TERMINAL_STATUSES,
     RunConflictError,
@@ -79,10 +80,19 @@ def create_app(service: RunService | None = None, *, lifespan: Lifespan | None =
                 policy=WorkflowPolicy(
                     max_repair_attempts=body.max_repair_attempts,
                     require_plan_approval=body.require_approval,
+                    model_profile=body.model_profile,
                 ),
             )
-        except RepositoryToolError as exc:
+        except (ModelConfigurationError, RepositoryToolError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/model-profiles", response_model=ModelProfilesResponse)
+    async def model_profiles(request: Request) -> ModelProfilesResponse:
+        run_service = _service(request)
+        return ModelProfilesResponse(
+            default_profile=run_service.default_model_profile,
+            profiles=run_service.model_profiles,
+        )
 
     @app.get("/runs/{run_id}", response_model=RunRecord)
     async def get_run(run_id: str, request: Request) -> RunRecord:

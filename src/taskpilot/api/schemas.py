@@ -12,6 +12,12 @@ class CreateRunRequest(ApiModel):
     task: str = Field(min_length=1, max_length=20_000)
     max_repair_attempts: int = Field(default=2, ge=0, le=10)
     require_approval: bool = True
+    model_profile: str | None = Field(default=None, min_length=1, max_length=100)
+
+
+class ModelProfilesResponse(ApiModel):
+    default_profile: str
+    profiles: tuple[str, ...]
 
 
 class ApprovalRequestBody(ApiModel):

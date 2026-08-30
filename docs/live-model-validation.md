@@ -31,7 +31,27 @@ local: true
 ```
 
 All roles may point to one model for a reproducible first run. Role-specific assignments and ordered
-routing rules can then be introduced without changing the graph.
+routing rules can then be introduced without changing the graph. Put assignments under a named
+profile and select it per run:
+
+```yaml
+routing:
+  default_profile: primary
+  profiles:
+    primary:
+      assignments:
+        analyst: primary
+        planner: primary
+        architect: primary
+        coder: primary
+        reviewer: primary
+        reporter: primary
+```
+
+TaskPilot validates every configured profile and required environment variable during startup. An
+OpenAI-compatible endpoint may also use `max_tokens`, `organization_env`, `headers_from_env`, and a
+non-secret `extra_body`. Header names are validated and header values containing newlines are
+rejected. Do not put credentials inside `extra_body`.
 
 ## Run the opt-in scenarios
 

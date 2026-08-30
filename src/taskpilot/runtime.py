@@ -54,7 +54,9 @@ def create_runtime_app(settings: AppSettings | None = None) -> FastAPI:
             if resolved_settings.demo_mode
             else LangChainModelFactory()
         )
-        gateway = ModelGateway(ModelRouter(routing), factory)
+        router = ModelRouter(routing)
+        gateway = ModelGateway(router, factory)
+        gateway.validate_configuration()
         nodes = EngineeringNodes(
             models=gateway,
             repository_policy=tools,
@@ -64,7 +66,13 @@ def create_runtime_app(settings: AppSettings | None = None) -> FastAPI:
         try:
             async with open_async_checkpointer(resolved_settings.checkpoint_url) as checkpointer:
                 graph = build_workflow(nodes.as_workflow_nodes(), checkpointer=checkpointer)
-                service = RunService(graph=graph, store=store, repository_policy=tools)
+                service = RunService(
+                    graph=graph,
+                    store=store,
+                    repository_policy=tools,
+                    model_profiles=router.profiles,
+                    default_model_profile=router.default_profile,
+                )
                 application.state.run_service = service
                 structlog.get_logger(__name__).info(
                     "runtime_ready",
