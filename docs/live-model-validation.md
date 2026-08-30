@@ -87,6 +87,8 @@ do not commit credentials or raw provider requests.
 
 ## Validation status for v0.1.0 preparation
 
-The harness is implemented and ordinary CI verifies that it remains collected but skipped. No
-successful live-provider scenario is recorded as release evidence. A release candidate should
-record at least Scenario A on the intended provider; Scenario B is strongly recommended.
+The harness is implemented and ordinary CI verifies that it remains collected but skipped. Scenario
+A completed successfully on 2026-08-30 using a private OpenAI-compatible endpoint. The sanitized
+[release trace](evidence/v0.1.0-scenario-a.json) records the approval boundary, implementation,
+real validation, one bounded repair, review, and final report without provider-specific identifiers
+or raw requests. Scenario B remains strongly recommended but is not a `v0.1.0` release gate.

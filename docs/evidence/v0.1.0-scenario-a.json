@@ -1,0 +1,37 @@
+{
+  "scenario": "a",
+  "status": "completed",
+  "approval": "approve",
+  "provider_class": "private OpenAI-compatible endpoint",
+  "model_completions": 9,
+  "graph_path": [
+    "repository_context",
+    "task_analysis",
+    "planning",
+    "repository_analysis",
+    "architecture_review",
+    "approval",
+    "implementation",
+    "testing",
+    "failure_analysis",
+    "repair",
+    "testing",
+    "code_review",
+    "final_report"
+  ],
+  "tools": [
+    "repository_context",
+    "write_file",
+    "execute",
+    "write_file",
+    "execute"
+  ],
+  "changed_files": [
+    "sample_api/app.py",
+    "tests/test_products.py"
+  ],
+  "validation_passed": true,
+  "validation_summary": "5 tests passed",
+  "repair_attempts": 1,
+  "duration_ms": 15062
+}

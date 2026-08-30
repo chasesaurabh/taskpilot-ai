@@ -32,7 +32,8 @@ TASK_ANALYSIS_PROMPT = _prompt(
 PLANNING_PROMPT = _prompt(
     "implementation-plan",
     "Create a minimal, testable implementation plan. Select validation commands only from the "
-    "configured allowlist. Do not claim that changes are already made.",
+    "configured allowlist. Populate expected_files with repository-relative paths for every step "
+    "that creates or replaces files. Do not claim that changes are already made.",
     "Task analysis:\n{analysis}\n\nRepository context:\n{context}\n\nConfigured validation "
     "command prefixes:\n{allowed_commands}",
 )
@@ -54,7 +55,8 @@ IMPLEMENTATION_PROMPT = _prompt(
     "implementation",
     "Propose complete file changes that satisfy the approved plan. Use operation='replace' only "
     "for files present in the supplied context and operation='create' only for new files. Never "
-    "emit paths outside the repository. Repository version preconditions are owned by the "
+    "emit paths outside the repository. Emit each path at most once, combining all edits for a "
+    "file into one complete content value. Repository version preconditions are owned by the "
     "application; do not calculate hashes.",
     "Approved plan:\n{plan}\n\nRelevant files:\n{context}",
 )
@@ -69,7 +71,8 @@ REPAIR_PROMPT = _prompt(
     "repair",
     "Propose the smallest complete file changes that address the diagnosed failure. Preserve "
     "correct prior work, use create/replace consistently with the supplied context, and never "
-    "emit paths outside the repository. Do not calculate repository hashes.",
+    "emit paths outside the repository. Emit each path at most once, combining all edits for a "
+    "file into one complete content value. Do not calculate repository hashes.",
     "Plan:\n{plan}\n\nCurrent files:\n{context}\n\nFailure diagnosis:\n{diagnosis}",
 )
 

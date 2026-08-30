@@ -5,7 +5,12 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from taskpilot.domain.models import ImplementationProposal, ProposedFileChange, TaskAnalysis
+from taskpilot.domain.models import (
+    ImplementationProposal,
+    PlanStep,
+    ProposedFileChange,
+    TaskAnalysis,
+)
 from taskpilot.models.config import (
     ModelConfig,
     ModelProfile,
@@ -311,6 +316,7 @@ class MethodCapturingModel:
     def __init__(self) -> None:
         self.method: str | None = None
         self.schema: type[BaseModel] | dict[str, Any] | None = None
+        self.prompt: str | None = None
 
     def with_structured_output(
         self,
@@ -323,13 +329,16 @@ class MethodCapturingModel:
 
         self.method = method
         self.schema = schema
-        return RunnableLambda(
-            lambda _: {
-                "parsed": {"objective": "Captured structured output method"},
+
+        def respond(prompt: Any) -> dict[str, Any]:
+            self.prompt = prompt.to_string()
+            return {
+                "parsed": TaskAnalysis(objective="Captured structured output method"),
                 "raw": None,
                 "parsing_error": None,
             }
-        )
+
+        return RunnableLambda(respond)
 
 
 def test_gateway_rejects_invalid_structured_envelope() -> None:
@@ -381,6 +390,39 @@ def test_gateway_forwards_configured_structured_output_method() -> None:
     assert model.schema["strict"] is False
 
 
+def test_gateway_includes_explicit_schema_guidance_for_json_mode() -> None:
+    model = MethodCapturingModel()
+    config = ModelConfig(
+        provider="openai-compatible",
+        model="compatible",
+        base_url="https://provider.example/v1",
+        structured_output_method="json_mode",
+    )
+    gateway = ModelGateway(
+        ModelRouter(
+            ModelRoutingPolicy(
+                models={"compatible": config},
+                profiles={"default": ModelProfile(assignments={ModelRole.ANALYST: "compatible"})},
+            )
+        ),
+        DeterministicModelFactory(model),
+    )
+
+    call = gateway.invoke_structured(
+        role=ModelRole.ANALYST,
+        routing_context=RoutingContext(),
+        prompt=TASK_ANALYSIS_PROMPT,
+        variables={"task": "Task", "context": "Context"},
+        output_schema=TaskAnalysis,
+    )
+
+    assert call.output.objective == "Captured structured output method"
+    assert model.method == "json_mode"
+    assert model.prompt is not None
+    assert "Do not rename fields" in model.prompt
+    assert '"acceptance_criteria"' in model.prompt
+
+
 @pytest.mark.parametrize(
     ("model", "expected"),
     [
@@ -409,8 +451,18 @@ def test_gateway_normalizes_malformed_and_failed_provider_responses(
 
 def test_model_proposals_describe_intent_without_owning_write_hashes() -> None:
     schema = ProposedFileChange.model_json_schema()
+    proposal_schema = ImplementationProposal.model_json_schema()
+    plan_step_schema = PlanStep.model_json_schema()
 
     assert "expected_sha256" not in schema["properties"]
+    assert (
+        "each repository path appearing at most once"
+        in proposal_schema["properties"]["changes"]["description"]
+    )
+    assert (
+        "Leave empty only when the step has no file effects"
+        in plan_step_schema["properties"]["expected_files"]["description"]
+    )
     with pytest.raises(ValueError, match="at most 25"):
         ImplementationProposal(
             summary="Too many changes",

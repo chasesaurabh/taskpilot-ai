@@ -6,12 +6,11 @@ Branch: `main`
 
 ## Decision
 
-The implementation, deterministic evaluation, security review, documentation, package, and Docker
-demo milestones are complete. The repository is a **release candidate**, not yet an unconditional
-tag recommendation: no successful opt-in live-provider scenario is recorded as release evidence.
-Execute at least Scenario A from the documented live scenarios and review its trace file before
-creating `v0.1.0` if real-provider proof is part of the release bar. Scenario B is strongly
-recommended.
+The implementation, deterministic evaluation, security review, documentation, package, Docker
+demo, and required live-provider validation milestones are complete. The repository is ready to tag
+as `v0.1.0`. Scenario A completed successfully through approval, implementation, real validation,
+one bounded repair, review, and final reporting. Scenario B remains strongly recommended after the
+release but is not a release gate.
 
 ## Verification results
 
@@ -19,7 +18,7 @@ recommended.
 | --- | --- |
 | Ruff formatting and lint | Passed; formatting clean, no lint findings |
 | mypy | Passed in strict mode; 40 source files |
-| Backend tests | 61 passed, 4 skipped; 85.27% coverage |
+| Backend tests | 65 passed, 4 skipped; 85.35% coverage |
 | Bundled sample API | 2 passed |
 | Frontend | Prettier and ESLint passed; 4 Vitest tests passed; production build passed |
 | Python package | Source distribution and wheel built successfully |
@@ -28,6 +27,7 @@ recommended.
 | CI configuration | GitHub Actions YAML parsed; Compose configuration valid |
 | Secret check | No known live-token patterns or tracked credential/database files found |
 | Browser review | 1440×900 Docker UI reviewed; no browser warnings or errors |
+| Live provider | Scenario A completed; 5 generated-repository tests passed after one bounded repair |
 
 The four local skips are explicit: two credentialed live-provider scenarios, one PostgreSQL adapter
 test without a host-exposed test URL, and one Windows symlink test where the host denies symlink
@@ -50,12 +50,15 @@ evidence for:
 The captured [completed graph](assets/taskpilot-hero.png) and
 [approval state](assets/taskpilot-approval.png) came from this run.
 
-## Remaining pre-tag action
+## Live-provider evidence
 
-Follow [live-model validation](live-model-validation.md) with provider credentials and archive at
-least the Scenario A JSON trace as release evidence. Scenario B is strongly recommended. This is an
-external validation action, not missing product code. Do not enable these paid/probabilistic tests
-in ordinary CI.
+The sanitized [Scenario A trace](evidence/v0.1.0-scenario-a.json) records 9 model completions, the
+approval and resume boundary, two write/validate cycles, 2 changed files, one repair, 5 passing
+generated-repository tests, code review, and final reporting. Provider-specific identifiers and raw
+requests are intentionally excluded. Do not enable paid or probabilistic live tests in ordinary CI.
+
+The remaining release work is mechanical: merge the validated release changes, tag that exact
+commit as `v0.1.0`, and create the GitHub release.
 
 ## Known release limitations
 
