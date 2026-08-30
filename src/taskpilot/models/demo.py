@@ -10,7 +10,7 @@ from langchain_core.prompt_values import PromptValue
 from langchain_core.runnables import Runnable, RunnableLambda
 from pydantic import BaseModel
 
-from taskpilot.models.config import ModelConfig
+from taskpilot.models.config import ModelConfig, StructuredOutputMethod
 from taskpilot.models.factory import StructuredChatModel
 
 DemoHandler = Callable[[str], BaseModel]
@@ -24,10 +24,13 @@ class DeterministicModel:
 
     def with_structured_output(
         self,
-        schema: type[BaseModel],
+        schema: type[BaseModel] | dict[str, Any],
         *,
         include_raw: bool = False,
+        method: StructuredOutputMethod | None = None,
     ) -> Runnable[Any, Any]:
+        if not isinstance(schema, type):
+            raise ValueError("The deterministic model requires a Pydantic schema")
         if schema not in self._handlers:
             raise ValueError(f"No deterministic handler for {schema.__name__}")
 

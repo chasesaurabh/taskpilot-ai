@@ -26,6 +26,54 @@ def test_environment_repository_roots_override_yaml(tmp_path: Path) -> None:
     assert resolved.allowed_roots == (tmp_path.resolve(),)
 
 
+def test_policy_loads_safe_default_validation_commands() -> None:
+    policy = load_policy(PROJECT_ROOT / "config.example.yaml")
+
+    assert policy.repository.validation_commands == (("python", "-m", "pytest"),)
+
+
+def test_policy_rejects_default_validation_command_outside_allowlist(tmp_path: Path) -> None:
+    policy_file = tmp_path / "unsafe-default-command.yaml"
+    policy_file.write_text(
+        """
+models:
+  default:
+    provider: demo
+    model: deterministic
+repository:
+  allowed_roots: [./examples]
+  allowed_commands:
+    - [python, -m, pytest]
+  validation_commands:
+    - [python, -m, pip]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="must match an allowed_commands"):
+        load_policy(policy_file)
+
+
+def test_policy_rejects_empty_command_allowlist_prefix(tmp_path: Path) -> None:
+    policy_file = tmp_path / "empty-command-prefix.yaml"
+    policy_file.write_text(
+        """
+models:
+  default:
+    provider: demo
+    model: deterministic
+repository:
+  allowed_roots: [./examples]
+  allowed_commands:
+    - []
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="non-empty argument prefixes"):
+        load_policy(policy_file)
+
+
 def test_policy_loads_named_profiles_and_normalizes_legacy_assignments(tmp_path: Path) -> None:
     configured = model_policy(
         load_policy(PROJECT_ROOT / "config.example.yaml"),

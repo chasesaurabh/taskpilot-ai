@@ -14,6 +14,8 @@ models:
     base_url: https://provider.example.com/v1
     api_key_env: COMPATIBLE_API_KEY
     max_tokens: 8192
+    structured_output_method: json_schema
+    structured_output_strict: false
   anthropic-reviewer:
     provider: anthropic
     model: claude-sonnet
@@ -55,6 +57,8 @@ repository:
     - [ruff, format, --check]
     - [npm, test]
     - [npm, run, lint]
+  validation_commands:
+    - [python, -m, pytest]
 
 workflow:
   max_repair_attempts: 2

@@ -10,16 +10,17 @@ from langchain.chat_models import init_chat_model
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel
 
-from taskpilot.models.config import ModelConfig
+from taskpilot.models.config import ModelConfig, StructuredOutputMethod
 from taskpilot.models.errors import ModelConfigurationError
 
 
 class StructuredChatModel(Protocol):
     def with_structured_output(
         self,
-        schema: type[BaseModel],
+        schema: type[BaseModel] | dict[str, Any],
         *,
         include_raw: bool = False,
+        method: StructuredOutputMethod | None = None,
     ) -> Runnable[Any, Any]: ...
 
 

@@ -30,7 +30,7 @@ from taskpilot.models.config import ModelConfig, ModelProfile, ModelRole, ModelR
 from taskpilot.models.demo import DeterministicModel, DeterministicModelFactory
 from taskpilot.models.gateway import ModelGateway
 from taskpilot.models.routing import ModelRouter
-from taskpilot.nodes import EngineeringNodes
+from taskpilot.nodes import EngineeringNodes, EngineeringNodesConfig
 from taskpilot.tools.errors import RepositoryToolError
 from taskpilot.tools.repository import RepositoryWorkspace
 from taskpilot.tools.types import RepositoryToolPolicy
@@ -243,6 +243,42 @@ def test_proposal_is_fully_validated_before_the_first_repository_write(tmp_path:
         )
 
     assert (repository / "value.txt").read_bytes() == b"initial\n"
+
+
+def test_testing_uses_policy_defaults_when_the_plan_omits_commands(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = _repository(tmp_path)
+    executable = Path(sys.executable).name
+    command = (executable, "-c", "print('validated')")
+    monkeypatch.setenv(
+        "PATH", f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}"
+    )
+    nodes = EngineeringNodes(
+        models=_gateway(),
+        repository_policy=RepositoryToolPolicy(
+            allowed_roots=(tmp_path,),
+            allow_commands=True,
+            allowed_commands=((executable, "-c"),),
+        ),
+        config=EngineeringNodesConfig(default_validation_commands=(command,)),
+    )
+    state = create_initial_state(
+        run_id="default-validation",
+        task="Validate the repository",
+        repository_root=str(repository),
+    )
+    state["plan"] = ImplementationPlan(
+        summary="Use configured validation",
+        steps=(PlanStep(order=1, description="Validate"),),
+    )
+
+    update = nodes.testing(state)
+
+    assert update["validation"].passed is True
+    assert update["validation"].command == command
+    assert "validated" in update["validation"].summary
 
 
 def test_real_approval_interrupt_discloses_plan_and_blocks_writes(

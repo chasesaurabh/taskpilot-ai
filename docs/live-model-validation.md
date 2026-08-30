@@ -50,8 +50,19 @@ routing:
 
 TaskPilot validates every configured profile and required environment variable during startup. An
 OpenAI-compatible endpoint may also use `max_tokens`, `organization_env`, `headers_from_env`, and a
-non-secret `extra_body`. Header names are validated and header values containing newlines are
-rejected. Do not put credentials inside `extra_body`.
+non-secret `extra_body`. Set `structured_output_method` to `json_schema`, `function_calling`, or
+`json_mode` when an endpoint requires a specific LangChain strategy. Header names are validated and
+header values containing newlines are rejected. Do not put credentials inside `extra_body`.
+
+For a compatible endpoint that cannot consume the OpenAI SDK's rewritten schema, set
+`structured_output_method: json_schema` and set `structured_output_strict` explicitly. TaskPilot
+then sends its standard JSON Schema unchanged and validates the returned object locally with
+Pydantic. Use `true` when the server supports strict constrained decoding; use `false` only when it
+accepts the schema but does not support strict mode.
+
+Set `repository.validation_commands` to the safe commands TaskPilot should run when a planner does
+not select commands. Every default command must match an `allowed_commands` argument prefix; an
+invalid policy is rejected during startup.
 
 ## Run the opt-in scenarios
 
