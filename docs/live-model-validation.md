@@ -87,7 +87,6 @@ do not commit credentials or raw provider requests.
 
 ## Validation status for v0.1.0 preparation
 
-The harness is implemented and ordinary CI verifies that it remains collected but skipped. No live
-provider run was executed during the repository audit because this environment had neither
-`OPENAI_API_KEY` nor `ANTHROPIC_API_KEY`. A release candidate should record at least Scenario A on
-the intended provider; Scenario B is strongly recommended.
+The harness is implemented and ordinary CI verifies that it remains collected but skipped. No
+successful live-provider scenario is recorded as release evidence. A release candidate should
+record at least Scenario A on the intended provider; Scenario B is strongly recommended.

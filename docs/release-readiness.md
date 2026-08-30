@@ -1,25 +1,27 @@
 # v0.1.0 release readiness
 
-Review date: 2026-08-29  
-Branch: `release/v0.1.0-credibility`
+Review date: 2026-08-30
+
+Branch: `main`
 
 ## Decision
 
 The implementation, deterministic evaluation, security review, documentation, package, and Docker
 demo milestones are complete. The repository is a **release candidate**, not yet an unconditional
-tag recommendation: the opt-in credentialed live-provider scenarios have not run in this
-credential-free environment. Execute at least the two documented live scenarios and review their
-trace files before creating `v0.1.0` if real-provider proof is part of the release bar.
+tag recommendation: no successful opt-in live-provider scenario is recorded as release evidence.
+Execute at least Scenario A from the documented live scenarios and review its trace file before
+creating `v0.1.0` if real-provider proof is part of the release bar. Scenario B is strongly
+recommended.
 
 ## Verification results
 
 | Gate | Result |
 | --- | --- |
-| Ruff formatting and lint | Passed; 78 files formatted, no lint findings |
+| Ruff formatting and lint | Passed; formatting clean, no lint findings |
 | mypy | Passed in strict mode; 40 source files |
-| Backend tests | 49 passed, 4 skipped; 83.87% coverage |
+| Backend tests | 61 passed, 4 skipped; 85.27% coverage |
 | Bundled sample API | 2 passed |
-| Frontend | Prettier and ESLint passed; 3 Vitest tests passed; production build passed |
+| Frontend | Prettier and ESLint passed; 4 Vitest tests passed; production build passed |
 | Python package | Source distribution and wheel built successfully |
 | Pre-commit | All configured hooks passed |
 | Dependency audits | `pip-audit` and `pnpm audit --prod --audit-level high`: no known vulnerabilities |
@@ -50,9 +52,10 @@ The captured [completed graph](assets/taskpilot-hero.png) and
 
 ## Remaining pre-tag action
 
-Follow [live-model validation](live-model-validation.md) with provider credentials and archive the
-two JSON trace files as release evidence. This is an external validation action, not missing product
-code. Do not enable these paid/probabilistic tests in ordinary CI.
+Follow [live-model validation](live-model-validation.md) with provider credentials and archive at
+least the Scenario A JSON trace as release evidence. Scenario B is strongly recommended. This is an
+external validation action, not missing product code. Do not enable these paid/probabilistic tests
+in ordinary CI.
 
 ## Known release limitations
 

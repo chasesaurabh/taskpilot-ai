@@ -1,0 +1,34 @@
+services:
+  api:
+    build:
+      args:
+        TASKPILOT_UID: ${TASKPILOT_HOST_UID:-1000}
+        TASKPILOT_GID: ${TASKPILOT_HOST_GID:-1000}
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      TASKPILOT_ALLOWED_REPOSITORY_ROOTS: /workspace/repository
+      TASKPILOT_POLICY_FILE: /opt/taskpilot/config.runtime.yaml
+      TASKPILOT_DEMO_MODE: "false"
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      COMPATIBLE_API_KEY: ${COMPATIBLE_API_KEY:-}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+    volumes:
+      - type: bind
+        source: ${TASKPILOT_REPOSITORY_PATH:?Set TASKPILOT_REPOSITORY_PATH to an absolute host path}
+        target: /workspace/repository
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${TASKPILOT_POLICY_PATH:-./.taskpilot/config.yaml}
+        target: /opt/taskpilot/config.runtime.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+
+  web:
+    build:
+      args:
+        VITE_TASKPILOT_DEMO_REPOSITORY: /workspace/repository

@@ -19,6 +19,26 @@ Open `http://localhost:5173`, start the prefilled task, inspect the parallel ana
 plan, and watch implementation, real subprocess validation, review, and the final report. No model
 key is required for this deterministic portfolio path.
 
+## Use TaskPilot on your repository
+
+The default Compose stack remains an isolated, no-key demo. To run against a repository on your
+machine, create ignored local configuration and use the repository overlay:
+
+```bash
+mkdir -p .taskpilot
+cp config.live.example.yaml .taskpilot/config.yaml
+cp .env.example .env
+# Edit .env: set TASKPILOT_REPOSITORY_PATH to an absolute path and add the provider key.
+# Edit .taskpilot/config.yaml: select models and safe validation commands for that repository.
+docker compose -f docker-compose.yml -f docker-compose.repository.yml up --build
+```
+
+Open `http://localhost:5173`; the form is prefilled with the mounted path
+`/workspace/repository`. TaskPilot writes through the bind mount only after approval, so start from
+a clean branch and review the resulting `git diff`. See
+[Use TaskPilot on your repository](docs/use-your-repository.md) for PowerShell commands, Linux file
+ownership, provider setup, toolchain constraints, and troubleshooting.
+
 ## Why this is more than a coding-agent loop
 
 - **Deterministic orchestration around probabilistic AI:** typed partial state, explicit routes, and
@@ -52,6 +72,8 @@ flowchart TD
 
 Architecture and repository-impact analysis execute concurrently and join before approval. Routing
 functions inspect typed evidence; they never ask a model where the workflow should go.
+
+![TaskPilot AI approval gate with plan, files, commands, and risks](docs/assets/taskpilot-approval.png)
 
 ## System architecture
 
@@ -241,6 +263,7 @@ TaskPilot AI is a developer tool, not a secure sandbox for hostile repositories.
 - [Evaluation scenarios](docs/evaluations.md)
 - [Self-hosted GitHub Actions runner](docs/self-hosted-runner.md)
 - [Live-model validation](docs/live-model-validation.md)
+- [Use TaskPilot on your repository](docs/use-your-repository.md)
 - [Why LangGraph](docs/adr/001-why-langgraph.md)
 - [State and checkpoint design](docs/adr/002-state-and-checkpoint-design.md)
 - [Human-in-the-loop policy](docs/adr/003-human-in-the-loop-policy.md)
