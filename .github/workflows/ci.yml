@@ -97,4 +97,9 @@ jobs:
         with:
           persist-credentials: false
       - run: docker compose config --quiet
+      - name: Validate repository overlay
+        env:
+          TASKPILOT_REPOSITORY_PATH: ${{ github.workspace }}/examples/sample-api
+          TASKPILOT_POLICY_PATH: ${{ github.workspace }}/config.live.example.yaml
+        run: docker compose -f docker-compose.yml -f docker-compose.repository.yml config --quiet
       - run: docker compose build

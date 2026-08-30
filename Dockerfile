@@ -1,5 +1,8 @@
 FROM python:3.12-slim AS runtime
 
+ARG TASKPILOT_UID=1000
+ARG TASKPILOT_GID=1000
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     DEBIAN_FRONTEND=noninteractive \
@@ -8,8 +11,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update && \
     apt-get install --yes --no-install-recommends git && \
     rm -rf /var/lib/apt/lists/* && \
-    groupadd --system taskpilot && \
-    useradd --system --gid taskpilot --create-home taskpilot
+    groupadd --gid "${TASKPILOT_GID}" taskpilot && \
+    useradd --uid "${TASKPILOT_UID}" --gid taskpilot --create-home taskpilot
 WORKDIR /opt/taskpilot
 
 COPY pyproject.toml uv.lock README.md LICENSE ./
