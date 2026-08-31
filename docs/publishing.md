@@ -10,6 +10,13 @@ No long-lived PyPI or registry tokens are required. The workflow builds from the
 tag, checks that the Python and web versions match that tag, publishes the distributions, pushes
 semantic-versioned container tags, and records GitHub artifact attestations for both images.
 
+## Current publication
+
+Release `v0.1.0` is published on [PyPI](https://pypi.org/project/taskpilot-ai/0.1.0/) and GHCR. Its
+[publishing run](https://github.com/chasesaurabh/taskpilot-ai/actions/runs/33351719786) completed all
+package, image, and attestation jobs successfully. The PyPI publisher is active for `release.yml`
+and the `pypi` GitHub environment.
+
 ## One-time configuration
 
 1. In the GitHub repository, create an environment named exactly `pypi` under **Settings →
@@ -35,21 +42,13 @@ The workflow grants `id-token: write` only to the PyPI publishing job. Its only 
 already-built distributions and invoke PyPA's publishing action. The container jobs use the
 repository-scoped `GITHUB_TOKEN`, with `packages: write`, and do not require a registry secret.
 
-## Publish the existing v0.1.0 release
+## v0.1.0 publication record
 
 The GitHub Release for `v0.1.0` predates the workflow, so publishing the workflow file cannot
-retroactively trigger its `release.published` event. After this change is present on the default
-branch and the one-time configuration is complete:
-
-1. Open **Actions → Publish release → Run workflow**.
-2. Enter `v0.1.0` as the tag and run the workflow from the default branch.
-3. After the first container push, open each package's settings on GitHub and set its visibility to
-   public if the account's package defaults did not already do so.
-4. Update the `v0.1.0` GitHub Release text after PyPI succeeds; it currently says that PyPI is not
-   yet available.
-
-The manual path accepts an existing tag, checks out `refs/tags/<tag>` explicitly, and performs the
-same version checks and publishing jobs as an automatic release.
+retroactively trigger its `release.published` event. It was published through the guarded manual
+path with `v0.1.0` as the input. That path checked out `refs/tags/v0.1.0` explicitly and performed
+the same version checks and publishing jobs as an automatic release. Both GHCR packages are public,
+and the GitHub Release text links to PyPI and the versioned images.
 
 ## Publish future releases
 

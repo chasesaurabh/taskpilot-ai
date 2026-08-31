@@ -27,6 +27,13 @@ dependencies = [
   "uvicorn[standard]>=0.34,<1",
 ]
 
+[project.urls]
+Homepage = "https://github.com/chasesaurabh/taskpilot-ai"
+Documentation = "https://github.com/chasesaurabh/taskpilot-ai#readme"
+Repository = "https://github.com/chasesaurabh/taskpilot-ai.git"
+Issues = "https://github.com/chasesaurabh/taskpilot-ai/issues"
+Changelog = "https://github.com/chasesaurabh/taskpilot-ai/blob/main/CHANGELOG.md"
+
 [project.scripts]
 taskpilot = "taskpilot.cli.app:app"
 taskpilot-api = "taskpilot.runtime:main"

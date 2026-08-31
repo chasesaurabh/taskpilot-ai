@@ -13,6 +13,8 @@ All notable changes to TaskPilot AI are documented in this file. The project fol
   and required environment-backed credentials and headers.
 - Safe compatible-provider options for maximum tokens, organization, custom headers, and extra
   request bodies; Docker images now include OpenAI and Anthropic integrations.
+- OIDC-based PyPI Trusted Publishing and public, provenance-attested GHCR release images for the
+  API and web UI.
 
 ## [0.1.0] - 2026-08-29
 

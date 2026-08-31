@@ -4,12 +4,19 @@
 
 [![CI](https://github.com/chasesaurabh/taskpilot-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/chasesaurabh/taskpilot-ai/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/chasesaurabh/taskpilot-ai/actions/workflows/codeql.yml/badge.svg)](https://github.com/chasesaurabh/taskpilot-ai/actions/workflows/codeql.yml)
+[![PyPI](https://img.shields.io/pypi/v/taskpilot-ai.svg)](https://pypi.org/project/taskpilot-ai/)
+[![Python](https://img.shields.io/pypi/pyversions/taskpilot-ai.svg)](https://pypi.org/project/taskpilot-ai/)
 
 ![TaskPilot AI completed delivery workflow](docs/assets/taskpilot-hero.png)
 
 TaskPilot turns a repository-scoped engineering request into a visible, human-governed delivery
 workflow. **LangGraph owns orchestration and durability. LangChain owns provider-neutral prompts and
 structured model calls. TaskPilot owns policy and constrained side effects.**
+
+## Quick start
+
+The Docker Compose demo is the fastest end-to-end path. It builds the API and web UI, starts
+PostgreSQL, and uses the bundled deterministic scenario:
 
 ```bash
 docker compose up --build
@@ -18,6 +25,25 @@ docker compose up --build
 Open `http://localhost:5173`, start the prefilled task, inspect the parallel analysis, approve the
 plan, and watch implementation, real subprocess validation, review, and the final report. No model
 key is required for this deterministic portfolio path.
+
+Install the published Python package for the CLI and API entry points:
+
+```bash
+python -m pip install "taskpilot-ai==0.1.0"
+taskpilot --help
+```
+
+The release also provides public, provenance-attested API and web images:
+
+```bash
+docker pull ghcr.io/chasesaurabh/taskpilot-ai:0.1.0
+docker pull ghcr.io/chasesaurabh/taskpilot-ai-web:0.1.0
+```
+
+The images are versioned components of the Compose deployment; use the environment, persistence,
+policy, and repository mounts shown in `docker-compose.yml` when deploying them. See the
+[v0.1.0 release](https://github.com/chasesaurabh/taskpilot-ai/releases/tag/v0.1.0) and
+[publishing guide](docs/publishing.md) for artifacts, tags, and attestation verification.
 
 ## Use TaskPilot on your repository
 
@@ -108,8 +134,9 @@ Add pagination to the products endpoint and update tests
 For OpenAI, Anthropic, hosted OpenAI-compatible endpoints, or local OpenAI-compatible inference, use
 the [opt-in live-model validation](docs/live-model-validation.md). Two scenarios exercise the same
 full API and graph and emit model selection, graph path, tools, files, validation, retry, token, and
-duration evidence. Live-provider tests never run in ordinary CI and were not executed in the
-credential-free release-review environment.
+duration evidence. Live-provider tests never run in ordinary CI. The release-gated Scenario A was
+executed separately with a real provider, and its sanitized trace is included in the release
+evidence.
 
 For direct development:
 

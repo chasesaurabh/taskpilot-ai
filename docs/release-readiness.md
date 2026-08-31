@@ -57,8 +57,15 @@ approval and resume boundary, two write/validate cycles, 2 changed files, one re
 generated-repository tests, code review, and final reporting. Provider-specific identifiers and raw
 requests are intentionally excluded. Do not enable paid or probabilistic live tests in ordinary CI.
 
-The remaining release work is mechanical: merge the validated release changes, tag that exact
-commit as `v0.1.0`, and create the GitHub release.
+## Publication status
+
+Release `v0.1.0` was tagged from validated commit `21f4a50` and published on 2026-08-30. The Python
+wheel and source distribution are available from
+[PyPI](https://pypi.org/project/taskpilot-ai/0.1.0/). Public, provenance-attested API and web images
+are available from GHCR as `ghcr.io/chasesaurabh/taskpilot-ai:0.1.0` and
+`ghcr.io/chasesaurabh/taskpilot-ai-web:0.1.0`. The
+[publishing workflow](https://github.com/chasesaurabh/taskpilot-ai/actions/runs/33351719786)
+completed successfully using PyPI Trusted Publishing and the repository-scoped GitHub token.
 
 ## Known release limitations
 
