@@ -278,6 +278,7 @@ TaskPilot AI is a developer tool, not a secure sandbox for hostile repositories.
 - [Dependency review](docs/dependency-review.md)
 - [v0.1.0 release notes](docs/releases/v0.1.0.md)
 - [v0.1.0 release-readiness evidence](docs/release-readiness.md)
+- [PyPI Trusted Publishing and GHCR release process](docs/publishing.md)
 - [Changelog](CHANGELOG.md)
 
 ## Project structure
