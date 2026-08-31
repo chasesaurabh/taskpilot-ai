@@ -12,6 +12,7 @@ from rich.json import JSON
 from rich.table import Table
 
 from taskpilot.cli.client import ApiClientError, SseEvent, TaskPilotClient
+from taskpilot.evaluations import load_dataset, run_dataset
 
 app = typer.Typer(
     name="taskpilot",
@@ -44,6 +45,13 @@ def run(
         typer.Option("--model-profile", help="Named server-side model routing profile."),
     ] = None,
     approval: Annotated[ApprovalMode, typer.Option()] = ApprovalMode.ASK,
+    approve_writes: Annotated[
+        bool, typer.Option("--approve-writes", help="Require approval before applying each patch.")
+    ] = False,
+    approve_commands: Annotated[
+        bool,
+        typer.Option("--approve-commands", help="Require approval before validation commands."),
+    ] = False,
     actor: Annotated[str, typer.Option(envvar="TASKPILOT_ACTOR")] = "local-developer",
 ) -> None:
     """Start a workflow and follow its replayable event stream."""
@@ -55,6 +63,8 @@ def run(
                 task=task,
                 max_repair_attempts=max_repairs,
                 require_approval=True,
+                require_write_approval=approve_writes,
+                require_command_approval=approve_commands,
                 model_profile=model_profile,
             )
             run_id = str(record["run_id"])
@@ -128,6 +138,35 @@ def events_command(
         raise typer.Exit(1) from exc
 
 
+@app.command("evaluate")
+def evaluate_command(
+    dataset: Annotated[Path, typer.Argument(exists=True, dir_okay=False, resolve_path=True)],
+    api_url: Annotated[str, typer.Option(envvar="TASKPILOT_API_URL")] = DEFAULT_API_URL,
+    actor: Annotated[str, typer.Option(envvar="TASKPILOT_ACTOR")] = "evaluation-runner",
+) -> None:
+    """Run a model-backed evaluation dataset through the public API."""
+
+    definition = load_dataset(dataset)
+    try:
+        with TaskPilotClient(api_url) as client:
+            results = run_dataset(
+                definition,
+                client=client,
+                dataset_directory=dataset.parent,
+                actor=actor,
+            )
+    except ApiClientError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
+    for result in results:
+        marker = "[green]✓[/green]" if result.passed else "[red]✗[/red]"
+        console.print(f"{marker} {result.case} ({result.run_id})")
+        for failure in result.failures:
+            console.print(f"  [red]{failure}[/red]")
+    if not all(result.passed for result in results):
+        raise typer.Exit(1)
+
+
 def _decision_command(
     run_id: str,
     action: str,
@@ -166,7 +205,11 @@ def _watch(
                 if approval == ApprovalMode.STOP:
                     console.print(f"Resume with: taskpilot approve {run_id}")
                     return 0
-                approved = approval == ApprovalMode.APPROVE or typer.confirm("Approve this plan?")
+                payload = event.data.get("data", {})
+                kind = payload.get("kind", "action") if isinstance(payload, dict) else "action"
+                approved = approval == ApprovalMode.APPROVE or typer.confirm(
+                    f"Approve this {kind} action?"
+                )
                 action = "approve" if approved else "reject"
                 reason = (
                     None if approved else typer.prompt("Rejection reason", default="Not approved")
@@ -194,6 +237,8 @@ def _render_event(event: SseEvent) -> None:
         console.print(f"[red]✗[/red] {_label(str(node or 'workflow'))}")
     elif event.event_type == "approval.required":
         console.print("\n[yellow]⏸ Human approval required[/yellow]")
+        if isinstance(data, dict) and data.get("kind"):
+            console.print(f"Gate: {data['kind']}")
         if isinstance(data, dict) and data.get("plan"):
             console.print(f"Plan: {data['plan'].get('summary', '')}")
     elif event.event_type in TERMINAL_EVENTS:
@@ -210,6 +255,9 @@ def _label(node: str) -> str:
         "repository_analysis": "Repository impact analyzed",
         "approval": "Approval recorded",
         "implementation": "Implementation completed",
+        "write_approval": "Write approval recorded",
+        "apply_changes": "Proposed changes applied",
+        "command_approval": "Command approval recorded",
         "testing": "Validation completed",
         "failure_analysis": "Failure analyzed",
         "repair": "Repair completed",

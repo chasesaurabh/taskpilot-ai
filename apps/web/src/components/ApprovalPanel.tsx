@@ -9,6 +9,12 @@ export function ApprovalPanel({
 }) {
   const [reason, setReason] = useState('');
   const plan = payload.plan as { summary?: string; proposed_commands?: string[][] } | undefined;
+  const kind = typeof payload.kind === 'string' ? payload.kind : 'plan';
+  const headings: Record<string, string> = {
+    plan: 'Review the implementation plan',
+    write: 'Review before repository writes',
+    command: 'Review before command execution',
+  };
   const files = Array.isArray(payload.proposed_files) ? payload.proposed_files : [];
   const risks = Array.isArray(payload.risks) ? payload.risks : [];
   const commands = Array.isArray(payload.proposed_commands) ? payload.proposed_commands : [];
@@ -16,8 +22,12 @@ export function ApprovalPanel({
     <section className="approval-panel">
       <div className="approval-copy">
         <div className="eyebrow warning">Human checkpoint</div>
-        <h2>Review before repository writes</h2>
-        <p>{plan?.summary ?? 'Inspect the plan and node findings before continuing.'}</p>
+        <h2>{headings[kind] ?? 'Review before continuing'}</h2>
+        <p>
+          {(typeof payload.summary === 'string' && payload.summary) ||
+            plan?.summary ||
+            'Inspect the proposed action before continuing.'}
+        </p>
         <div className="approval-evidence">
           <span>{files.length} proposed file(s)</span>
           <span>{commands.length} validation command(s)</span>

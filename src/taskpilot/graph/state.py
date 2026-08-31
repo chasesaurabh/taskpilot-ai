@@ -10,6 +10,7 @@ from taskpilot.domain.models import (
     ApprovalDecision,
     ChangeSet,
     FailureDiagnosis,
+    FilePrecondition,
     FinalReport,
     ImplementationPlan,
     ImplementationProposal,
@@ -44,8 +45,10 @@ class WorkflowState(TypedDict, total=False):
     architecture_report: AnalysisReport
     repository_report: AnalysisReport
     approval: ApprovalDecision
+    approval_history: Annotated[list[ApprovalDecision], operator.add]
     change_set: ChangeSet
     proposal: ImplementationProposal
+    proposal_preconditions: tuple[FilePrecondition, ...]
     validation: ValidationResult
     diagnosis: FailureDiagnosis
     repair_attempts: int
@@ -65,8 +68,10 @@ class WorkflowUpdate(TypedDict, total=False):
     architecture_report: AnalysisReport
     repository_report: AnalysisReport
     approval: ApprovalDecision
+    approval_history: list[ApprovalDecision]
     change_set: ChangeSet
     proposal: ImplementationProposal
+    proposal_preconditions: tuple[FilePrecondition, ...]
     validation: ValidationResult
     diagnosis: FailureDiagnosis
     repair_attempts: int
@@ -91,6 +96,7 @@ def create_initial_state(
         repository=RepositoryDescriptor(root=repository_root),
         policy=policy or WorkflowPolicy(),
         approval=ApprovalDecision(),
+        approval_history=[],
         repair_attempts=0,
         model_decisions=[],
         node_history=[],

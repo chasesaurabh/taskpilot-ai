@@ -12,6 +12,8 @@ class CreateRunRequest(ApiModel):
     task: str = Field(min_length=1, max_length=20_000)
     max_repair_attempts: int = Field(default=2, ge=0, le=10)
     require_approval: bool = True
+    require_write_approval: bool = False
+    require_command_approval: bool = False
     model_profile: str | None = Field(default=None, min_length=1, max_length=100)
 
 
@@ -21,5 +23,5 @@ class ModelProfilesResponse(ApiModel):
 
 
 class ApprovalRequestBody(ApiModel):
-    actor: str = Field(min_length=1, max_length=320)
+    actor: str | None = Field(default=None, min_length=1, max_length=320)
     reason: str | None = Field(default=None, max_length=4_000)

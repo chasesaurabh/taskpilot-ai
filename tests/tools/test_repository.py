@@ -233,3 +233,27 @@ def test_commands_do_not_receive_provider_secrets(
     assert result.exit_code == 0
     assert result.output.strip() == "missing"
     assert "must-not-reach-command" not in result.output
+
+
+def test_container_backend_builds_a_networkless_least_privilege_worker(tmp_path: Path) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    workspace = RepositoryWorkspace(
+        repository,
+        _policy(
+            tmp_path,
+            allow_commands=True,
+            allowed_commands=(("pytest",),),
+            execution_backend="container",
+            container_image="python:3.12-slim",
+        ),
+    )
+
+    arguments = workspace._container_arguments("docker", ("pytest", "-q"))
+
+    assert arguments[:3] == ("docker", "run", "--rm")
+    assert arguments[3:5] == ("--network", "none")
+    assert "ALL" in arguments
+    assert "no-new-privileges" in arguments
+    assert f"type=bind,source={repository.resolve()},target=/workspace" in arguments
+    assert arguments[-3:] == ("python:3.12-slim", "pytest", "-q")

@@ -23,6 +23,12 @@ describe('RunForm model profiles', () => {
     fireEvent.change(profile, { target: { value: 'private' } });
     fireEvent.click(screen.getByRole('button', { name: 'Start workflow' }));
 
-    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ model_profile: 'private' }));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model_profile: 'private',
+        require_write_approval: false,
+        require_command_approval: false,
+      }),
+    );
   });
 });

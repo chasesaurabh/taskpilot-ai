@@ -8,17 +8,22 @@ from pathlib import Path
 from langgraph.types import interrupt
 from pydantic import BaseModel, ConfigDict, Field
 
+from taskpilot.artifacts import ArtifactStore
 from taskpilot.domain.models import (
     AnalysisReport,
     ApprovalAction,
     ApprovalDecision,
+    ApprovalKind,
     ApprovalRequest,
     ApprovalResponse,
     ApprovalStatus,
+    ArtifactKind,
+    ArtifactRef,
     ChangeSet,
     ContextFile,
     FailureDiagnosis,
     FileChange,
+    FilePrecondition,
     FinalReport,
     ImplementationPlan,
     ImplementationProposal,
@@ -67,10 +72,12 @@ class EngineeringNodes:
         models: ModelGateway,
         repository_policy: RepositoryToolPolicy,
         config: EngineeringNodesConfig | None = None,
+        artifact_store: ArtifactStore | None = None,
     ) -> None:
         self._models = models
         self._repository_policy = repository_policy
         self._config = config or EngineeringNodesConfig()
+        self._artifact_store = artifact_store
 
     def as_workflow_nodes(self) -> WorkflowNodes:
         return WorkflowNodes(
@@ -86,6 +93,9 @@ class EngineeringNodes:
             repair=self.repair,
             code_review=self.code_review,
             final_report=self.final_report,
+            write_approval=self.write_approval,
+            apply_changes=self.apply_changes,
+            command_approval=self.command_approval,
         )
 
     def _workspace(self, state: WorkflowState) -> RepositoryWorkspace:
@@ -241,45 +251,26 @@ class EngineeringNodes:
         )
 
     def approval(self, state: WorkflowState) -> WorkflowUpdate:
-        if state["policy"].require_plan_approval:
-            proposed_files = tuple(
-                dict.fromkeys(path for step in state["plan"].steps for path in step.expected_files)
-            )
-            risks = tuple(
-                finding.detail
-                for report in (state["architecture_report"], state["repository_report"])
-                for finding in report.findings
-                if finding.severity in {"warning", "blocking"}
-            )
-            request = ApprovalRequest(
-                run_id=state["metadata"].run_id,
-                task=state["task"].description,
-                plan=state["plan"],
-                architecture=state["architecture_report"],
-                repository_impact=state["repository_report"],
-                proposed_files=proposed_files,
-                proposed_commands=state["plan"].proposed_commands,
-                risks=risks,
-            )
-            response = ApprovalResponse.model_validate(interrupt(request.model_dump(mode="json")))
-            status = (
-                ApprovalStatus.APPROVED
-                if response.action == ApprovalAction.APPROVE
-                else ApprovalStatus.REJECTED
-            )
-            decision = ApprovalDecision(
-                status=status,
-                actor=response.actor,
-                reason=response.reason,
-                decided_at=datetime.now(UTC),
-            )
-            detail = f"{response.action} by {response.actor}"
-        else:
-            decision = ApprovalDecision(status=ApprovalStatus.APPROVED, actor="policy:auto")
-            detail = "auto-approved by policy"
-        return WorkflowUpdate(
-            approval=decision,
-            node_history=self._record("approval", detail),
+        proposed_files = tuple(
+            dict.fromkeys(path for step in state["plan"].steps for path in step.expected_files)
+        )
+        risks = tuple(
+            finding.detail
+            for report in (state["architecture_report"], state["repository_report"])
+            for finding in report.findings
+            if finding.severity in {"warning", "blocking"}
+        )
+        return self._approval_update(
+            state,
+            kind=ApprovalKind.PLAN,
+            required=state["policy"].require_plan_approval,
+            node="approval",
+            summary=state["plan"].summary,
+            proposed_files=proposed_files,
+            proposed_commands=state["plan"].proposed_commands,
+            risks=risks,
+            architecture=state["architecture_report"],
+            repository_impact=state["repository_report"],
         )
 
     def implementation(self, state: WorkflowState) -> WorkflowUpdate:
@@ -295,17 +286,59 @@ class EngineeringNodes:
             },
             output_schema=ImplementationProposal,
         )
-        change_set = self._apply_proposal(workspace, call.output, expected_hashes)
+        preconditions = self._proposal_preconditions(call.output, expected_hashes)
         return WorkflowUpdate(
             proposal=call.output,
-            change_set=change_set,
+            proposal_preconditions=preconditions,
             model_decisions=[call.decision],
-            node_history=self._record("implementation", change_set.summary),
+            node_history=self._record("implementation", call.output.summary),
+        )
+
+    def write_approval(self, state: WorkflowState) -> WorkflowUpdate:
+        proposal = state["proposal"]
+        return self._approval_update(
+            state,
+            kind=ApprovalKind.WRITE,
+            required=state["policy"].require_write_approval,
+            node="write_approval",
+            summary=proposal.summary,
+            proposed_files=tuple(change.path for change in proposal.changes),
+        )
+
+    def apply_changes(self, state: WorkflowState) -> WorkflowUpdate:
+        workspace = self._workspace(state)
+        expected_hashes = {
+            item.path: item.expected_sha256 for item in state["proposal_preconditions"]
+        }
+        change_set = self._apply_proposal(workspace, state["proposal"], expected_hashes)
+        artifact = self._put_artifact(
+            state,
+            kind=ArtifactKind.PATCH,
+            content=workspace.git_diff().output,
+            media_type="text/x-diff",
+        )
+        if artifact is not None:
+            change_set = change_set.model_copy(update={"artifacts": (artifact,)})
+        return WorkflowUpdate(
+            change_set=change_set,
+            node_history=self._record("apply_changes", change_set.summary),
+        )
+
+    def command_approval(self, state: WorkflowState) -> WorkflowUpdate:
+        commands = self._select_validation_commands(state["plan"].proposed_commands)
+        return self._approval_update(
+            state,
+            kind=ApprovalKind.COMMAND,
+            required=state["policy"].require_command_approval,
+            node="command_approval",
+            summary="Run configured validation commands",
+            proposed_commands=commands,
         )
 
     def testing(self, state: WorkflowState) -> WorkflowUpdate:
         workspace = self._workspace(state)
         commands = self._select_validation_commands(state["plan"].proposed_commands)
+        artifacts: list[ArtifactRef] = []
         if not commands:
             validation = ValidationResult(
                 passed=False,
@@ -328,6 +361,14 @@ class EngineeringNodes:
                         summary=f"Validation command was denied or unavailable: {exc}",
                     )
                     break
+                artifact = self._put_artifact(
+                    state,
+                    kind=ArtifactKind.VALIDATION_LOG,
+                    content=result.output,
+                    media_type="text/plain",
+                )
+                if artifact is not None:
+                    artifacts.append(artifact)
                 if result.exit_code != 0 or result.timed_out or result.output_truncated:
                     summary = result.output[-4_000:] or "Validation command failed without output"
                     validation = ValidationResult(
@@ -345,6 +386,7 @@ class EngineeringNodes:
                     duration_ms=result.duration_ms,
                     summary=result.output[-4_000:] or "Validation command passed",
                 )
+            validation = validation.model_copy(update={"artifacts": tuple(artifacts)})
         status = "passed" if validation.passed else "failed"
         return WorkflowUpdate(
             validation=validation,
@@ -398,14 +440,88 @@ class EngineeringNodes:
             },
             output_schema=ImplementationProposal,
         )
-        change_set = self._apply_proposal(workspace, call.output, expected_hashes)
         attempts = state["repair_attempts"] + 1
         return WorkflowUpdate(
             proposal=call.output,
-            change_set=change_set,
+            proposal_preconditions=self._proposal_preconditions(call.output, expected_hashes),
             repair_attempts=attempts,
             model_decisions=[call.decision],
             node_history=self._record("repair", f"repair attempt {attempts}"),
+        )
+
+    def _approval_update(
+        self,
+        state: WorkflowState,
+        *,
+        kind: ApprovalKind,
+        required: bool,
+        node: str,
+        summary: str,
+        proposed_files: tuple[str, ...] = (),
+        proposed_commands: tuple[tuple[str, ...], ...] = (),
+        risks: tuple[str, ...] = (),
+        architecture: AnalysisReport | None = None,
+        repository_impact: AnalysisReport | None = None,
+    ) -> WorkflowUpdate:
+        approval_id = f"{state['metadata'].run_id}:{kind.value}:{state.get('repair_attempts', 0)}"
+        if required:
+            request = ApprovalRequest(
+                kind=kind,
+                approval_id=approval_id,
+                run_id=state["metadata"].run_id,
+                task=state["task"].description,
+                plan=state["plan"],
+                architecture=architecture,
+                repository_impact=repository_impact,
+                summary=summary,
+                proposed_files=proposed_files,
+                proposed_commands=proposed_commands,
+                risks=risks,
+            )
+            response = ApprovalResponse.model_validate(interrupt(request.model_dump(mode="json")))
+            status = (
+                ApprovalStatus.APPROVED
+                if response.action == ApprovalAction.APPROVE
+                else ApprovalStatus.REJECTED
+            )
+            decision = ApprovalDecision(
+                kind=kind,
+                approval_id=approval_id,
+                status=status,
+                actor=response.actor,
+                reason=response.reason,
+                decided_at=datetime.now(UTC),
+            )
+            detail = f"{response.action} by {response.actor}"
+        else:
+            decision = ApprovalDecision(
+                kind=kind,
+                approval_id=approval_id,
+                status=ApprovalStatus.APPROVED,
+                actor="policy:auto",
+            )
+            detail = "auto-approved by policy"
+        return WorkflowUpdate(
+            approval=decision,
+            approval_history=[decision],
+            node_history=self._record(node, detail),
+        )
+
+    def _put_artifact(
+        self,
+        state: WorkflowState,
+        *,
+        kind: ArtifactKind,
+        content: str,
+        media_type: str,
+    ) -> ArtifactRef | None:
+        if self._artifact_store is None:
+            return None
+        return self._artifact_store.put_text(
+            run_id=state["metadata"].run_id,
+            kind=kind,
+            content=content,
+            media_type=media_type,
         )
 
     def code_review(self, state: WorkflowState) -> WorkflowUpdate:
@@ -484,10 +600,25 @@ class EngineeringNodes:
         return "\n\n".join(sections), hashes
 
     @staticmethod
+    def _proposal_preconditions(
+        proposal: ImplementationProposal,
+        expected_hashes: dict[str, str],
+    ) -> tuple[FilePrecondition, ...]:
+        return tuple(
+            FilePrecondition(
+                path=Path(change.path).as_posix().removeprefix("./"),
+                expected_sha256=expected_hashes.get(
+                    Path(change.path).as_posix().removeprefix("./")
+                ),
+            )
+            for change in proposal.changes
+        )
+
+    @staticmethod
     def _apply_proposal(
         workspace: RepositoryWorkspace,
         proposal: ImplementationProposal,
-        expected_hashes: dict[str, str],
+        expected_hashes: dict[str, str | None],
     ) -> ChangeSet:
         normalized_changes: list[tuple[str, ProposedFileChange]] = []
         seen: set[str] = set()
@@ -533,7 +664,8 @@ def _language_for(path: str) -> str | None:
 def _determine_outcome(state: WorkflowState) -> tuple[RunStatus, str | None]:
     approval = state["approval"].status
     if approval == ApprovalStatus.REJECTED:
-        return RunStatus.REJECTED, state["approval"].reason or "The plan was rejected"
+        kind = state["approval"].kind
+        return RunStatus.REJECTED, state["approval"].reason or f"The {kind} action was rejected"
     if approval != ApprovalStatus.APPROVED:
         return RunStatus.FAILED, "Implementation did not receive approval"
     validation = state.get("validation")
@@ -553,7 +685,7 @@ def _state_summary(
     parts = [
         f"outcome={outcome}",
         f"repairs={state['repair_attempts']}/{state['policy'].max_repair_attempts}",
-        f"approval={state['approval'].status}",
+        f"approval={state['approval'].kind}:{state['approval'].status}",
     ]
     if state.get("validation"):
         parts.append(f"validation={state['validation'].summary}")

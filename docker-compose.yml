@@ -25,11 +25,16 @@ services:
       TASKPILOT_ALLOWED_REPOSITORY_ROOTS: /opt/taskpilot/examples
       TASKPILOT_POLICY_FILE: /opt/taskpilot/config.example.yaml
       TASKPILOT_DEMO_MODE: "true"
+      TASKPILOT_AUTH_TOKENS: ${TASKPILOT_AUTH_TOKENS:-}
+      TASKPILOT_ARTIFACT_BACKEND: local
+      TASKPILOT_ARTIFACT_ROOT: /var/lib/taskpilot/artifacts
     depends_on:
       postgres:
         condition: service_healthy
     ports:
       - "8000:8000"
+    volumes:
+      - taskpilot-artifacts:/var/lib/taskpilot/artifacts
 
   web:
     build:
@@ -42,3 +47,4 @@ services:
 
 volumes:
   taskpilot-postgres:
+  taskpilot-artifacts:

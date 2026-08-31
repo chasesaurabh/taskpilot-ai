@@ -59,3 +59,12 @@ Neither mode claims exactly-once side effects for a crash inside a write/command
 
 See [Live-model validation](live-model-validation.md). Two opt-in scenarios execute the complete API
 and graph using the configured LangChain provider; they are always skipped in ordinary CI.
+
+## Dataset runner
+
+`taskpilot evaluate <dataset.yaml>` runs declarative cases through the public API and therefore uses
+the server's selected model profile, persistence, approvals, repository tools, and artifact path.
+Cases can assert an outcome, changed-file subset, required graph-path subsequence, and minimum/maximum
+repair count. The bundled `evaluations/datasets/demo-pagination.yaml` documents the schema and runs
+against deterministic demo mode; private datasets can select live profiles without committing
+credentials or provider-specific request data.

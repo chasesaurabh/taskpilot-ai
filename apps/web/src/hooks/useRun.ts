@@ -1,30 +1,13 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
-import { createRun, decideRun, eventsUrl, getRun, type CreateRunInput } from '../api';
+import { useCallback, useEffect, useReducer, useState } from 'react';
+import { createRun, decideRun, getRun, streamEvents, type CreateRunInput } from '../api';
 import type { RunEvent, RunRecord } from '../types';
 import { initialWorkflowState, reduceWorkflowEvent } from '../workflow';
-
-const EVENT_TYPES = [
-  'run.created',
-  'run.started',
-  'run.resumed',
-  'node.started',
-  'node.completed',
-  'node.failed',
-  'model.completed',
-  'tool.completed',
-  'approval.required',
-  'approval.decided',
-  'run.completed',
-  'run.stopped',
-  'run.failed',
-];
 
 export function useRun() {
   const [run, setRun] = useState<RunRecord>();
   const [workflow, dispatch] = useReducer(reduceWorkflowEvent, undefined, initialWorkflowState);
   const [error, setError] = useState<string>();
   const [starting, setStarting] = useState(false);
-  const sourceRef = useRef<EventSource | undefined>(undefined);
 
   const refresh = useCallback(async (runId: string) => {
     setRun(await getRun(runId));
@@ -32,10 +15,10 @@ export function useRun() {
 
   useEffect(() => {
     if (!run?.run_id) return;
-    const source = new EventSource(eventsUrl(run.run_id));
-    sourceRef.current = source;
-    const receive = (message: MessageEvent<string>) => {
-      const event = JSON.parse(message.data) as RunEvent;
+    const source = new AbortController();
+    let sequence = 0;
+    const receive = (event: RunEvent) => {
+      sequence = Math.max(sequence, event.sequence);
       dispatch(event);
       if (
         ['approval.required', 'run.completed', 'run.stopped', 'run.failed'].includes(
@@ -45,14 +28,25 @@ export function useRun() {
         void refresh(run.run_id).catch((cause: unknown) => setError(String(cause)));
       }
       if (['run.completed', 'run.stopped', 'run.failed'].includes(event.event_type)) {
-        source.onerror = null;
-        source.close();
+        source.abort();
       }
     };
-    EVENT_TYPES.forEach((eventType) => source.addEventListener(eventType, receive));
-    source.onerror = () =>
-      setError('Live event connection interrupted; the browser will retry automatically.');
-    return () => source.close();
+    const connect = async () => {
+      while (!source.signal.aborted) {
+        try {
+          await streamEvents(run.run_id, receive, source.signal, sequence);
+        } catch (cause) {
+          if (!source.signal.aborted) {
+            setError(`Live event connection interrupted; retrying: ${String(cause)}`);
+          }
+        }
+        if (!source.signal.aborted) {
+          await new Promise((resolve) => window.setTimeout(resolve, 1000));
+        }
+      }
+    };
+    void connect();
+    return () => source.abort();
   }, [refresh, run?.run_id]);
 
   const start = useCallback(async (input: CreateRunInput) => {

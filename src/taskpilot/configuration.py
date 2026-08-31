@@ -39,6 +39,13 @@ class AppSettings(BaseSettings):
     log_level: str = "INFO"
     langsmith_enabled: bool = False
     demo_mode: bool = True
+    auth_tokens: str | None = None
+    artifact_backend: str = "local"
+    artifact_root: Path = Path(".taskpilot/artifacts")
+    artifact_s3_bucket: str | None = None
+    artifact_s3_prefix: str = "taskpilot"
+    artifact_s3_endpoint_url: str | None = None
+    artifact_s3_region: str | None = None
 
     @property
     def repository_roots(self) -> tuple[Path, ...]:
@@ -66,11 +73,18 @@ class RepositoryPolicyConfig(BaseModel):
     max_command_output_bytes: int = Field(default=1_048_576, ge=1)
     allowed_commands: tuple[tuple[str, ...], ...] = ()
     validation_commands: tuple[tuple[str, ...], ...] = ()
+    execution_backend: str = Field(default="host", pattern="^(host|container)$")
+    container_runtime: str = "docker"
+    container_image: str | None = None
+    container_memory: str = "2g"
+    container_cpus: float = Field(default=2.0, gt=0, le=64)
 
     @model_validator(mode="after")
     def validate_default_commands(self) -> RepositoryPolicyConfig:
         if self.validation_commands and not self.allow_commands:
             raise ValueError("validation_commands require repository command execution")
+        if self.execution_backend == "container" and not self.container_image:
+            raise ValueError("container_image is required for container execution")
         for prefix in self.allowed_commands:
             if not prefix or any(not argument or "\x00" in argument for argument in prefix):
                 raise ValueError("allowed_commands must contain non-empty argument prefixes")
@@ -128,6 +142,11 @@ def repository_policy(settings: AppSettings, policy: PolicyConfig) -> Repository
         command_timeout_seconds=policy.repository.command_timeout_seconds,
         max_command_output_bytes=policy.repository.max_command_output_bytes,
         allowed_commands=policy.repository.allowed_commands,
+        execution_backend=policy.repository.execution_backend,
+        container_runtime=policy.repository.container_runtime,
+        container_image=policy.repository.container_image,
+        container_memory=policy.repository.container_memory,
+        container_cpus=policy.repository.container_cpus,
     )
 
 

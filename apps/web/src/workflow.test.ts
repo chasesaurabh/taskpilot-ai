@@ -25,6 +25,12 @@ describe('workflow event projection', () => {
     state = reduceWorkflowEvent(state, event('approval.required', 'approval', { plan: {} }));
     expect(state.nodes.approval.status).toBe('waiting');
     expect(state.approvalPayload).toEqual({ plan: {} });
+
+    state = reduceWorkflowEvent(
+      state,
+      event('approval.required', 'write_approval', { kind: 'write' }),
+    );
+    expect(state.nodes.write_approval.status).toBe('waiting');
   });
 
   it('aggregates normalized model usage from node updates', () => {

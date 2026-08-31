@@ -6,6 +6,8 @@ from taskpilot.domain.models import ApprovalStatus
 from taskpilot.graph.state import WorkflowState
 
 ApprovalRoute = Literal["implementation", "final_report"]
+WriteApprovalRoute = Literal["apply_changes", "final_report"]
+CommandApprovalRoute = Literal["testing", "final_report"]
 ValidationRoute = Literal["code_review", "failure_analysis", "final_report"]
 ReviewRoute = Literal["repair", "final_report"]
 
@@ -16,6 +18,22 @@ def route_after_approval(state: WorkflowState) -> ApprovalRoute:
     decision = state["approval"]
     if decision.status == ApprovalStatus.APPROVED:
         return "implementation"
+    return "final_report"
+
+
+def route_after_write_approval(state: WorkflowState) -> WriteApprovalRoute:
+    """Apply a proposal only after the active write decision allows it."""
+
+    if state["approval"].status == ApprovalStatus.APPROVED:
+        return "apply_changes"
+    return "final_report"
+
+
+def route_after_command_approval(state: WorkflowState) -> CommandApprovalRoute:
+    """Execute validation only after the active command decision allows it."""
+
+    if state["approval"].status == ApprovalStatus.APPROVED:
+        return "testing"
     return "final_report"
 
 

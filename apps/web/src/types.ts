@@ -22,6 +22,8 @@ export interface RunRecord {
   policy: {
     max_repair_attempts: number;
     require_plan_approval: boolean;
+    require_write_approval: boolean;
+    require_command_approval: boolean;
     model_profile?: string;
   };
   approval?: Record<string, unknown>;

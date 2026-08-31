@@ -29,10 +29,21 @@ class ApprovalStatus(StrEnum):
     REJECTED = "rejected"
 
 
+class ApprovalKind(StrEnum):
+    PLAN = "plan"
+    WRITE = "write"
+    COMMAND = "command"
+
+
 class Severity(StrEnum):
     INFO = "info"
     WARNING = "warning"
     BLOCKING = "blocking"
+
+
+class ArtifactKind(StrEnum):
+    PATCH = "patch"
+    VALIDATION_LOG = "validation_log"
 
 
 class RunMetadata(DomainModel):
@@ -52,6 +63,8 @@ class RepositoryDescriptor(DomainModel):
 class WorkflowPolicy(DomainModel):
     max_repair_attempts: int = Field(default=2, ge=0, le=10)
     require_plan_approval: bool = True
+    require_write_approval: bool = False
+    require_command_approval: bool = False
     model_profile: str | None = Field(default=None, min_length=1, max_length=100)
 
 
@@ -107,6 +120,8 @@ class AnalysisReport(DomainModel):
 
 
 class ApprovalDecision(DomainModel):
+    kind: ApprovalKind = ApprovalKind.PLAN
+    approval_id: str | None = None
     status: ApprovalStatus = ApprovalStatus.PENDING
     actor: str | None = None
     reason: str | None = None
@@ -119,11 +134,14 @@ class ApprovalAction(StrEnum):
 
 
 class ApprovalRequest(DomainModel):
+    kind: ApprovalKind = ApprovalKind.PLAN
+    approval_id: str
     run_id: str
     task: str
     plan: ImplementationPlan
-    architecture: AnalysisReport
-    repository_impact: AnalysisReport
+    architecture: AnalysisReport | None = None
+    repository_impact: AnalysisReport | None = None
+    summary: str = ""
     proposed_files: tuple[str, ...] = ()
     proposed_commands: tuple[tuple[str, ...], ...] = ()
     risks: tuple[str, ...] = ()
@@ -142,9 +160,20 @@ class FileChange(DomainModel):
     after_sha256: str | None = None
 
 
+class ArtifactRef(DomainModel):
+    artifact_id: str = Field(min_length=1)
+    run_id: str = Field(min_length=1)
+    kind: ArtifactKind
+    media_type: str = Field(min_length=1)
+    size_bytes: int = Field(ge=0)
+    sha256: str = Field(min_length=64, max_length=64)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class ChangeSet(DomainModel):
     summary: str
     changes: tuple[FileChange, ...] = ()
+    artifacts: tuple[ArtifactRef, ...] = ()
 
 
 class ProposedFileChange(DomainModel):
@@ -155,6 +184,11 @@ class ProposedFileChange(DomainModel):
         description="Complete resulting file content, not a patch or partial edit.",
     )
     rationale: str = Field(default="", max_length=4_000)
+
+
+class FilePrecondition(DomainModel):
+    path: str = Field(min_length=1, max_length=500)
+    expected_sha256: str | None = None
 
 
 class ImplementationProposal(DomainModel):
@@ -175,6 +209,7 @@ class ValidationResult(DomainModel):
     exit_code: int | None = None
     duration_ms: int = Field(default=0, ge=0)
     summary: str = ""
+    artifacts: tuple[ArtifactRef, ...] = ()
 
 
 class FailureDiagnosis(DomainModel):

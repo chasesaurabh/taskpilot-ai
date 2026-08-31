@@ -23,6 +23,7 @@ class PersistenceModel(BaseModel):
 
 class RunRecord(PersistenceModel):
     run_id: str
+    owner_id: str = "local"
     task: str
     repository: str
     policy: WorkflowPolicy
@@ -80,6 +81,7 @@ class SqliteRunStore:
             PRAGMA foreign_keys=ON;
             CREATE TABLE IF NOT EXISTS runs (
                 run_id TEXT PRIMARY KEY,
+                owner_id TEXT NOT NULL DEFAULT 'local',
                 task TEXT NOT NULL,
                 repository TEXT NOT NULL,
                 policy_json TEXT NOT NULL,
@@ -102,6 +104,11 @@ class SqliteRunStore:
             );
             """
         )
+        columns = await self._connection.execute_fetchall("PRAGMA table_info(runs)")
+        if not any(row[1] == "owner_id" for row in columns):
+            await self._connection.execute(
+                "ALTER TABLE runs ADD COLUMN owner_id TEXT NOT NULL DEFAULT 'local'"
+            )
         await self._connection.commit()
 
     async def close(self) -> None:
@@ -114,17 +121,19 @@ class SqliteRunStore:
         task: str,
         repository: str,
         policy: WorkflowPolicy,
+        owner_id: str = "local",
     ) -> RunRecord:
         now = datetime.now(UTC)
         async with self._write_lock:
             await self._connection.execute(
                 """
                 INSERT INTO runs (
-                    run_id, task, repository, policy_json, status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    run_id, owner_id, task, repository, policy_json, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
+                    owner_id,
                     task,
                     repository,
                     policy.model_dump_json(),
@@ -143,6 +152,15 @@ class SqliteRunStore:
         if row is None:
             raise RunNotFoundError(f"Run not found: {run_id}")
         return _run_from_row(row)
+
+    async def list_runs(self, *, owner_id: str, limit: int = 100) -> tuple[RunRecord, ...]:
+        cursor = await self._connection.execute(
+            "SELECT * FROM runs WHERE owner_id = ? ORDER BY created_at DESC LIMIT ?",
+            (owner_id, limit),
+        )
+        rows = await cursor.fetchall()
+        await cursor.close()
+        return tuple(_run_from_row(row) for row in rows)
 
     async def transition(
         self,
@@ -272,6 +290,7 @@ def _run_from_row(row: aiosqlite.Row) -> RunRecord:
     )
     return RunRecord(
         run_id=row["run_id"],
+        owner_id=row["owner_id"],
         task=row["task"],
         repository=row["repository"],
         policy=WorkflowPolicy.model_validate_json(row["policy_json"]),

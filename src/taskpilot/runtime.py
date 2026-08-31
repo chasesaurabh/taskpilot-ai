@@ -14,6 +14,8 @@ from fastapi import FastAPI
 
 from taskpilot.api.app import create_app
 from taskpilot.application.runs import RunService
+from taskpilot.artifacts import ArtifactStore, LocalArtifactStore, S3ArtifactStore
+from taskpilot.auth import TokenAuthenticator
 from taskpilot.configuration import AppSettings, load_policy, model_policy, repository_policy
 from taskpilot.graph.builder import build_workflow
 from taskpilot.models.demo import DeterministicModelFactory
@@ -56,6 +58,7 @@ def create_runtime_app(settings: AppSettings | None = None) -> FastAPI:
         router = ModelRouter(routing)
         gateway = ModelGateway(router, factory)
         gateway.validate_configuration()
+        artifacts = _open_artifact_store(resolved_settings)
         nodes = EngineeringNodes(
             models=gateway,
             repository_policy=tools,
@@ -63,6 +66,7 @@ def create_runtime_app(settings: AppSettings | None = None) -> FastAPI:
                 max_context_bytes=policy.repository.max_context_bytes,
                 default_validation_commands=policy.repository.validation_commands,
             ),
+            artifact_store=artifacts,
         )
         store = await _open_store(resolved_settings.database_url)
         try:
@@ -74,6 +78,7 @@ def create_runtime_app(settings: AppSettings | None = None) -> FastAPI:
                     repository_policy=tools,
                     model_profiles=router.profiles,
                     default_model_profile=router.default_profile,
+                    artifacts=artifacts,
                 )
                 application.state.run_service = service
                 structlog.get_logger(__name__).info(
@@ -87,7 +92,10 @@ def create_runtime_app(settings: AppSettings | None = None) -> FastAPI:
         finally:
             await store.close()
 
-    return create_app(lifespan=lifespan)
+    return create_app(
+        lifespan=lifespan,
+        authenticator=TokenAuthenticator.from_json(resolved_settings.auth_tokens),
+    )
 
 
 def _ensure_runtime_bin_on_path() -> None:
@@ -110,6 +118,28 @@ async def _open_store(database_url: str) -> ClosableRunStore:
         return await PostgresRunStore.open(database_url)
     raw_path = database_url.removeprefix("sqlite+aiosqlite:///").removeprefix("sqlite:///")
     return await SqliteRunStore.open(Path(raw_path))
+
+
+def _open_artifact_store(settings: AppSettings) -> ArtifactStore:
+    if settings.artifact_backend == "local":
+        return LocalArtifactStore(settings.artifact_root)
+    if settings.artifact_backend == "s3":
+        if not settings.artifact_s3_bucket:
+            raise ValueError("TASKPILOT_ARTIFACT_S3_BUCKET is required for S3 artifacts")
+        options = {
+            key: value
+            for key, value in {
+                "endpoint_url": settings.artifact_s3_endpoint_url,
+                "region_name": settings.artifact_s3_region,
+            }.items()
+            if value is not None
+        }
+        return S3ArtifactStore(
+            bucket=settings.artifact_s3_bucket,
+            prefix=settings.artifact_s3_prefix,
+            **options,
+        )
+    raise ValueError("TASKPILOT_ARTIFACT_BACKEND must be 'local' or 's3'")
 
 
 app = create_runtime_app()

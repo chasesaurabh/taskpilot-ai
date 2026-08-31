@@ -7,6 +7,20 @@ All notable changes to TaskPilot AI are documented in this file. The project fol
 
 ### Added
 
+- Independent durable plan, repository-write, and validation-command approval gates, including
+  graph, API, CLI, and web UI support across repeated repair cycles.
+- Owner-scoped bearer authentication, authenticated approval actors, and per-user run listing.
+- Local and S3-compatible artifact stores for immutable full patches and validation logs, with
+  integrity metadata, durable events, and an owner-protected download endpoint.
+- Opt-in ephemeral container execution for allowlisted validation commands with no network,
+  dropped capabilities, resource limits, and a constrained repository mount.
+- YAML model-backed evaluation datasets and a `taskpilot evaluate` runner that asserts outcomes,
+  files, graph paths, and repair bounds through the public API.
+
+## [0.1.0] - 2026-08-29
+
+### Added
+
 - Named model-routing profiles selectable through the API, CLI, and web UI, persisted with durable
   workflow policy and included in model-decision telemetry.
 - Startup validation for profile completeness, provider integrations, structured-output capability,
@@ -15,10 +29,6 @@ All notable changes to TaskPilot AI are documented in this file. The project fol
   request bodies; Docker images now include OpenAI and Anthropic integrations.
 - OIDC-based PyPI Trusted Publishing and public, provenance-attested GHCR release images for the
   API and web UI.
-
-## [0.1.0] - 2026-08-29
-
-### Added
 
 - Typed LangGraph software-delivery workflow with parallel analysis, deterministic conditional
   routing, native approval interrupts, bounded diagnosis/repair loops, and final reporting.

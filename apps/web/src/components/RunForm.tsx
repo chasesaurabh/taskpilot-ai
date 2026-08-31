@@ -14,6 +14,8 @@ export function RunForm({
   const [task, setTask] = useState('Add pagination to the products endpoint and update tests');
   const [profiles, setProfiles] = useState<ModelProfiles>();
   const [modelProfile, setModelProfile] = useState('');
+  const [approveWrites, setApproveWrites] = useState(false);
+  const [approveCommands, setApproveCommands] = useState(false);
 
   useEffect(() => {
     void getModelProfiles()
@@ -31,6 +33,8 @@ export function RunForm({
       task,
       max_repair_attempts: 2,
       require_approval: true,
+      require_write_approval: approveWrites,
+      require_command_approval: approveCommands,
       ...(modelProfile ? { model_profile: modelProfile } : {}),
     });
   }
@@ -70,6 +74,22 @@ export function RunForm({
           </select>
         </label>
       )}
+      <label>
+        <input
+          type="checkbox"
+          checked={approveWrites}
+          onChange={(event) => setApproveWrites(event.target.checked)}
+        />{' '}
+        Approve each proposed patch before writing
+      </label>
+      <label>
+        <input
+          type="checkbox"
+          checked={approveCommands}
+          onChange={(event) => setApproveCommands(event.target.checked)}
+        />{' '}
+        Approve validation commands before execution
+      </label>
       <button className="primary" disabled={disabled}>
         {disabled ? 'Starting…' : 'Start workflow'}
       </button>

@@ -69,8 +69,8 @@ ownership, provider setup, toolchain constraints, and troubleshooting.
 
 - **Deterministic orchestration around probabilistic AI:** typed partial state, explicit routes, and
   a bounded repair budget—not a model deciding when it is done.
-- **Human governance:** a native persisted `interrupt()` discloses files, commands, findings, and
-  risks before writes; `Command(resume=…)` continues the same saved thread.
+- **Human governance:** persisted plan, write, and command gates disclose the exact action before
+  each enabled side effect; `Command(resume=…)` continues the same saved thread.
 - **Durable and observable execution:** SQLite/PostgreSQL checkpoints are separate from the run/event
   projection used by replayable SSE, the CLI, and the graph-first UI.
 - **Constrained effects:** application-owned hash preconditions, atomic writes, no general shell,
@@ -87,10 +87,14 @@ flowchart TD
     Plan --> Impact[Repository impact]
     Architecture --> Approval
     Impact --> Approval
-    Approval -->|approve| Implement --> Test
+    Approval -->|approve| Implement[Propose implementation] --> WriteGate{Write approval}
     Approval -->|reject| Report
+    WriteGate -->|approve| Apply --> CommandGate{Command approval}
+    WriteGate -->|reject| Report
+    CommandGate -->|approve| Test
+    CommandGate -->|reject| Report
     Test -->|pass| Review
-    Test -->|fail, budget remains| Diagnose --> Repair --> Test
+    Test -->|fail, budget remains| Diagnose --> Repair --> WriteGate
     Test -->|retry budget exhausted| Report
     Review -->|blocking, budget remains| Repair
     Review -->|accepted or exhausted| Report --> End
@@ -187,9 +191,11 @@ The FastAPI lifecycle contract separates commands from observation:
 
 ```text
 POST /runs
+GET  /runs                       # authenticated owner's runs
 GET  /model-profiles
 GET  /runs/{run_id}
 GET  /runs/{run_id}/events     # SSE; honors Last-Event-ID
+GET  /runs/{run_id}/artifacts/{artifact_id}
 POST /runs/{run_id}/approve
 POST /runs/{run_id}/reject
 ```
@@ -218,10 +224,11 @@ machine-specific endpoints in an ignored policy file rather than adding them to 
 | Concern | Environment/YAML control |
 | --- | --- |
 | Runtime | host, port, environment, demo mode |
-| Persistence | SQLite paths or PostgreSQL connection URLs |
+| Persistence | SQLite paths or PostgreSQL connection URLs; local or S3-compatible artifacts |
 | Repository | allowed roots, file/context/output limits, write/execute capabilities |
-| Commands | argument-prefix allowlist, default validation commands, and timeout |
-| Workflow | plan approval requirement and maximum repair attempts |
+| Commands | argument-prefix allowlist, host/container backend, image, timeout, resource limits |
+| Workflow | independent plan/write/command approvals and maximum repair attempts |
+| Access | bearer-token principals through `TASKPILOT_AUTH_TOKENS` |
 | Models | named profiles, provider definitions/options, role assignments, ordered routing rules |
 | Observability | JSON log level and opt-in LangSmith tracing |
 
@@ -279,6 +286,33 @@ and [ADR 008](docs/adr/008-model-profiles-and-provider-options.md).
 
 The API writes structured JSON logs with request or run correlation IDs. Its durable event stream distinguishes graph-node, model, repository-tool, approval, and terminal events. LangSmith tracing is opt-in via `TASKPILOT_LANGSMITH_ENABLED`; application state and logs remain authoritative when tracing is disabled.
 
+Full patches and validation logs are stored outside graph checkpoints. Local storage is the default;
+set `TASKPILOT_ARTIFACT_BACKEND=s3`, a bucket, and optional endpoint/region settings for an
+S3-compatible object store. Public events carry immutable artifact metadata and SHA-256 digests.
+
+## Authentication and isolated execution
+
+Set `TASKPILOT_AUTH_TOKENS` to a JSON principal-to-token mapping, for example
+`{"alice":"a-long-random-secret"}`. Runs, event streams, approvals, listings, and artifact downloads
+are owner-scoped; authenticated identities are recorded as approval actors. Deploy behind TLS and
+load tokens from a secret manager.
+
+Validation runs on the host by default. Set `repository.execution_backend: container` and provide
+`container_image` to execute allowlisted commands in an ephemeral, network-disabled container with
+dropped capabilities, resource limits, a temporary filesystem, and only the repository bind mount.
+See [deployment and isolation](docs/deployment.md).
+
+## Model-backed evaluation datasets
+
+Run a checked-in or private YAML dataset against any configured model profile:
+
+```bash
+taskpilot evaluate evaluations/datasets/demo-pagination.yaml
+```
+
+Each case asserts terminal outcome, changed files, graph-path evidence, and repair bounds through the
+public API. The ordinary deterministic tests remain credential-free.
+
 ## Security model
 
 TaskPilot AI is a developer tool, not a secure sandbox for hostile repositories. Its default tool layer enforces configured repository roots, canonical path checks, symlink and traversal defenses, command allowlists, timeouts, output limits, and separate read/write/execute permissions. Strong isolation requires running workers in disposable containers or VMs.
@@ -291,6 +325,7 @@ TaskPilot AI is a developer tool, not a secure sandbox for hostile repositories.
 - [Self-hosted GitHub Actions runner](docs/self-hosted-runner.md)
 - [Live-model validation](docs/live-model-validation.md)
 - [Use TaskPilot on your repository](docs/use-your-repository.md)
+- [Authentication, artifacts, and isolated execution](docs/deployment.md)
 - [Why LangGraph](docs/adr/001-why-langgraph.md)
 - [State and checkpoint design](docs/adr/002-state-and-checkpoint-design.md)
 - [Human-in-the-loop policy](docs/adr/003-human-in-the-loop-policy.md)
@@ -319,6 +354,8 @@ src/taskpilot/nodes/      Engineering node responsibilities
 src/taskpilot/models/     LangChain providers, routing, demo model
 src/taskpilot/tools/      Constrained repository capabilities
 src/taskpilot/persistence SQLite/PostgreSQL checkpoints, runs, events
+src/taskpilot/artifacts.py Local and S3-compatible artifact adapters
+src/taskpilot/auth.py      Bearer authentication and principals
 src/taskpilot/observability Structured logging and LangSmith setup
 examples/sample-api/      Writable FastAPI demonstration repository
 tests/                    Unit, integration, routing, resume, API, CLI
@@ -346,10 +383,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for workflow and commit conventions. Focu
 ## Limitations
 
 - Demo mode intentionally supports the bundled product-pagination task; use a configured model provider for arbitrary tasks.
-- The plan is the only approval checkpoint; additional write/command gates are not implemented.
-- The API has no built-in authentication; bind it to a trusted interface or use an authenticated reverse proxy.
-- The initial runtime targets one trusted developer per installation, not multi-tenant isolation.
-- Repository commands are processes on the host unless an external sandbox is configured.
+- Opaque bearer tokens are intentionally small-scope authentication; enterprise OIDC/SSO and token
+  rotation remain deployment integrations.
+- Graph orchestration remains in the API process; the container backend isolates validation command
+  execution, not model calls or the control plane itself.
+- Host execution remains the local default and should only be used with trusted repositories.
+- Side effects are not generally exactly-once across a crash inside a write or command operation.
 - Provider behavior and structured-output quality vary; capability checks and fallbacks cannot eliminate that variance.
 
 ## Roadmap
@@ -357,9 +396,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for workflow and commit conventions. Focu
 - [x] Foundation, architecture, typed graph, tools, and model routing
 - [x] Repair loops, approval interrupts, checkpoints, API/SSE, and CLI
 - [x] Graph-first UI, observability, PostgreSQL, Docker, sample app, CI, and security guidance
-- [ ] Authenticated multi-user deployments and isolated worker execution
-- [ ] Object-store artifacts for long-lived full patches and validation logs
-- [ ] Additional approval gates and model-backed evaluation datasets
+- [x] Authenticated multi-user run isolation and container-isolated command execution
+- [x] Object-store artifacts for long-lived full patches and validation logs
+- [x] Additional approval gates and model-backed evaluation datasets
 
 ## License
 

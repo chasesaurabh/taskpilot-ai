@@ -15,6 +15,8 @@ from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from taskpilot.api.schemas import ApprovalRequestBody, CreateRunRequest, ModelProfilesResponse
 from taskpilot.application.runs import RunService
+from taskpilot.artifacts import ArtifactNotFoundError
+from taskpilot.auth import AuthenticationError, Principal, TokenAuthenticator
 from taskpilot.domain.models import ApprovalAction, WorkflowPolicy
 from taskpilot.models.errors import ModelConfigurationError
 from taskpilot.persistence.runs import (
@@ -29,7 +31,12 @@ from taskpilot.tools.errors import RepositoryToolError
 Lifespan = Callable[[FastAPI], AbstractAsyncContextManager[None]]
 
 
-def create_app(service: RunService | None = None, *, lifespan: Lifespan | None = None) -> FastAPI:
+def create_app(
+    service: RunService | None = None,
+    *,
+    lifespan: Lifespan | None = None,
+    authenticator: TokenAuthenticator | None = None,
+) -> FastAPI:
     app = FastAPI(
         title="TaskPilot AI API",
         version="0.1.0",
@@ -38,6 +45,7 @@ def create_app(service: RunService | None = None, *, lifespan: Lifespan | None =
     )
     if service is not None:
         app.state.run_service = service
+    app.state.authenticator = authenticator or TokenAuthenticator()
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -73,6 +81,7 @@ def create_app(service: RunService | None = None, *, lifespan: Lifespan | None =
     @app.post("/runs", response_model=RunRecord, status_code=status.HTTP_202_ACCEPTED)
     async def create_run(body: CreateRunRequest, request: Request) -> RunRecord:
         run_service = _service(request)
+        principal = _principal(request)
         try:
             return await run_service.start_run(
                 task=body.task,
@@ -80,26 +89,56 @@ def create_app(service: RunService | None = None, *, lifespan: Lifespan | None =
                 policy=WorkflowPolicy(
                     max_repair_attempts=body.max_repair_attempts,
                     require_plan_approval=body.require_approval,
+                    require_write_approval=body.require_write_approval,
+                    require_command_approval=body.require_command_approval,
                     model_profile=body.model_profile,
                 ),
+                owner_id=principal.principal_id,
             )
         except (ModelConfigurationError, RepositoryToolError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.get("/model-profiles", response_model=ModelProfilesResponse)
     async def model_profiles(request: Request) -> ModelProfilesResponse:
+        _principal(request)
         run_service = _service(request)
         return ModelProfilesResponse(
             default_profile=run_service.default_model_profile,
             profiles=run_service.model_profiles,
         )
 
+    @app.get("/runs", response_model=list[RunRecord])
+    async def list_runs(request: Request) -> tuple[RunRecord, ...]:
+        principal = _principal(request)
+        return await _service(request).store.list_runs(owner_id=principal.principal_id)
+
     @app.get("/runs/{run_id}", response_model=RunRecord)
     async def get_run(run_id: str, request: Request) -> RunRecord:
         try:
-            return await _service(request).store.get_run(run_id)
+            return await _service(request).get_owned_run(
+                run_id, owner_id=_principal(request).principal_id
+            )
         except RunNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/runs/{run_id}/artifacts/{artifact_id}")
+    async def get_artifact(run_id: str, artifact_id: str, request: Request) -> Response:
+        run_service = _service(request)
+        try:
+            await run_service.get_owned_run(run_id, owner_id=_principal(request).principal_id)
+            if run_service.artifacts is None:
+                raise ArtifactNotFoundError("Artifact storage is not configured")
+            ref, content = run_service.artifacts.get_bytes(run_id=run_id, artifact_id=artifact_id)
+        except (RunNotFoundError, ArtifactNotFoundError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return Response(
+            content=content,
+            media_type=ref.media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{artifact_id}"',
+                "X-Artifact-SHA256": ref.sha256,
+            },
+        )
 
     @app.get("/runs/{run_id}/events")
     async def stream_events(
@@ -108,11 +147,16 @@ def create_app(service: RunService | None = None, *, lifespan: Lifespan | None =
         last_event_id: int | None = Header(default=None, alias="Last-Event-ID"),
     ) -> StreamingResponse:
         try:
-            await _service(request).store.get_run(run_id)
+            await _service(request).get_owned_run(run_id, owner_id=_principal(request).principal_id)
         except RunNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return StreamingResponse(
-            _event_stream(_service(request), run_id, last_event_id or 0),
+            _event_stream(
+                _service(request),
+                run_id,
+                last_event_id or 0,
+                owner_id=_principal(request).principal_id,
+            ),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
@@ -141,6 +185,18 @@ def _service(request: Request) -> RunService:
     return service
 
 
+def _principal(request: Request) -> Principal:
+    authenticator: TokenAuthenticator = request.app.state.authenticator
+    try:
+        return authenticator.authenticate(request.headers.get("Authorization"))
+    except AuthenticationError as exc:
+        raise HTTPException(
+            status_code=401,
+            detail=str(exc),
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+
+
 async def _resume(
     request: Request,
     run_id: str,
@@ -148,11 +204,16 @@ async def _resume(
     body: ApprovalRequestBody,
 ) -> RunRecord:
     try:
+        principal = _principal(request)
+        actor = principal.principal_id if principal.authenticated else body.actor
+        if actor is None:
+            raise HTTPException(status_code=422, detail="actor is required without authentication")
         return await _service(request).resume(
             run_id,
             action=action,
-            actor=body.actor,
+            actor=actor,
             reason=body.reason,
+            owner_id=principal.principal_id,
         )
     except RunNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -160,7 +221,9 @@ async def _resume(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-async def _event_stream(service: RunService, run_id: str, after: int) -> AsyncIterator[str]:
+async def _event_stream(
+    service: RunService, run_id: str, after: int, *, owner_id: str
+) -> AsyncIterator[str]:
     cursor = after
     revision = service.store.revision
     while True:
@@ -168,7 +231,7 @@ async def _event_stream(service: RunService, run_id: str, after: int) -> AsyncIt
         for event in events:
             cursor = event.sequence
             yield _format_sse(event)
-        record = await service.store.get_run(run_id)
+        record = await service.get_owned_run(run_id, owner_id=owner_id)
         if record.status in TERMINAL_STATUSES:
             return
         next_revision = await service.store.wait_for_change(revision)

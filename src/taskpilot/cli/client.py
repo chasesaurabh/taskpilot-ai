@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Any
@@ -27,12 +28,15 @@ class TaskPilotClient:
         base_url: str,
         *,
         transport: httpx.BaseTransport | None = None,
+        api_token: str | None = None,
     ) -> None:
         timeout = httpx.Timeout(connect=10, read=None, write=30, pool=10)
+        token = api_token or os.environ.get("TASKPILOT_API_TOKEN")
         self._client = httpx.Client(
             base_url=base_url.rstrip("/"),
             timeout=timeout,
             transport=transport,
+            headers={"Authorization": f"Bearer {token}"} if token else None,
         )
 
     def close(self) -> None:
@@ -51,6 +55,8 @@ class TaskPilotClient:
         task: str,
         max_repair_attempts: int,
         require_approval: bool,
+        require_write_approval: bool = False,
+        require_command_approval: bool = False,
         model_profile: str | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -58,6 +64,8 @@ class TaskPilotClient:
             "task": task,
             "max_repair_attempts": max_repair_attempts,
             "require_approval": require_approval,
+            "require_write_approval": require_write_approval,
+            "require_command_approval": require_command_approval,
         }
         if model_profile is not None:
             payload["model_profile"] = model_profile

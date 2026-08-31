@@ -48,6 +48,10 @@ repository:
   max_context_bytes: 1048576
   allow_writes: true
   allow_commands: true
+  # Set to container and provide an image to isolate validation from the API host.
+  execution_backend: host
+  container_runtime: docker
+  container_image: null
   command_timeout_seconds: 120
   max_command_output_bytes: 1048576
   allowed_commands:
@@ -63,6 +67,8 @@ repository:
 workflow:
   max_repair_attempts: 2
   require_plan_approval: true
+  require_write_approval: false
+  require_command_approval: false
 
 observability:
   langsmith_enabled: false

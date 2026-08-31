@@ -216,9 +216,11 @@ class RepositoryWorkspace:
         ):
             raise CommandDeniedError("Command does not match an allowed argument prefix")
 
-        executable = shutil.which(executable_name)
+        containerized = require_allowlist and self._policy.execution_backend == "container"
+        host_executable = self._policy.container_runtime if containerized else executable_name
+        executable = shutil.which(host_executable)
         if executable is None:
-            raise RepositoryToolError(f"Executable was not found: {executable_name}")
+            raise RepositoryToolError(f"Executable was not found: {host_executable}")
         safe_environment = {
             key: value
             for key, value in os.environ.items()
@@ -228,8 +230,13 @@ class RepositoryWorkspace:
         timed_out = False
         output_truncated = False
         with tempfile.TemporaryFile() as output_file:
+            process_arguments = (
+                self._container_arguments(executable, command)
+                if containerized
+                else (executable, *command[1:])
+            )
             process = subprocess.Popen(
-                (executable, *command[1:]),
+                process_arguments,
                 cwd=self._root,
                 env=safe_environment,
                 stdin=subprocess.DEVNULL,
@@ -263,4 +270,34 @@ class RepositoryWorkspace:
             duration_ms=duration_ms,
             timed_out=timed_out,
             output_truncated=output_truncated,
+        )
+
+    def _container_arguments(self, runtime: str, command: tuple[str, ...]) -> tuple[str, ...]:
+        image = self._policy.container_image
+        if image is None:
+            raise RepositoryToolError("Container execution requires a configured image")
+        return (
+            runtime,
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--pids-limit",
+            "256",
+            "--memory",
+            self._policy.container_memory,
+            "--cpus",
+            str(self._policy.container_cpus),
+            "--tmpfs",
+            "/tmp:rw,noexec,nosuid,size=256m",
+            "--workdir",
+            "/workspace",
+            "--mount",
+            f"type=bind,source={self._root},target=/workspace",
+            image,
+            *command,
         )

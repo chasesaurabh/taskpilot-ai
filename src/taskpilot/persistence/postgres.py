@@ -46,6 +46,7 @@ class PostgresRunStore:
             """
             CREATE TABLE IF NOT EXISTS runs (
                 run_id TEXT PRIMARY KEY,
+                owner_id TEXT NOT NULL DEFAULT 'local',
                 task TEXT NOT NULL,
                 repository TEXT NOT NULL,
                 policy_json JSONB NOT NULL,
@@ -56,6 +57,9 @@ class PostgresRunStore:
                 updated_at TIMESTAMPTZ NOT NULL
             )
             """
+        )
+        await self._connection.execute(
+            "ALTER TABLE runs ADD COLUMN IF NOT EXISTS owner_id TEXT NOT NULL DEFAULT 'local'"
         )
         await self._connection.execute(
             """
@@ -84,15 +88,25 @@ class PostgresRunStore:
         task: str,
         repository: str,
         policy: WorkflowPolicy,
+        owner_id: str = "local",
     ) -> RunRecord:
         now = datetime.now(UTC)
         await self._connection.execute(
             """
             INSERT INTO runs (
-                run_id, task, repository, policy_json, status, created_at, updated_at
-            ) VALUES (%s, %s, %s, %s::jsonb, %s, %s, %s)
+                run_id, owner_id, task, repository, policy_json, status, created_at, updated_at
+            ) VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s, %s)
             """,
-            (run_id, task, repository, policy.model_dump_json(), RunStatus.QUEUED, now, now),
+            (
+                run_id,
+                owner_id,
+                task,
+                repository,
+                policy.model_dump_json(),
+                RunStatus.QUEUED,
+                now,
+                now,
+            ),
         )
         await self._connection.commit()
         return await self.get_run(run_id)
@@ -103,6 +117,13 @@ class PostgresRunStore:
         if row is None:
             raise RunNotFoundError(f"Run not found: {run_id}")
         return _run_from_row(row)
+
+    async def list_runs(self, *, owner_id: str, limit: int = 100) -> tuple[RunRecord, ...]:
+        cursor = await self._connection.execute(
+            "SELECT * FROM runs WHERE owner_id = %s ORDER BY created_at DESC LIMIT %s",
+            (owner_id, limit),
+        )
+        return tuple(_run_from_row(row) for row in await cursor.fetchall())
 
     async def transition(
         self,
@@ -217,6 +238,7 @@ def _json_value(value: Any) -> Any:
 def _run_from_row(row: dict[str, Any]) -> RunRecord:
     return RunRecord(
         run_id=row["run_id"],
+        owner_id=row["owner_id"],
         task=row["task"],
         repository=row["repository"],
         policy=WorkflowPolicy.model_validate(_json_value(row["policy_json"])),

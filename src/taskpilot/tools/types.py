@@ -21,6 +21,11 @@ class RepositoryToolPolicy(ToolModel):
     command_timeout_seconds: float = Field(default=120, gt=0, le=3_600)
     max_command_output_bytes: int = Field(default=1_048_576, ge=1)
     allowed_commands: tuple[tuple[str, ...], ...] = ()
+    execution_backend: str = Field(default="host", pattern="^(host|container)$")
+    container_runtime: str = "docker"
+    container_image: str | None = None
+    container_memory: str = "2g"
+    container_cpus: float = Field(default=2.0, gt=0, le=64)
     ignored_directories: tuple[str, ...] = (
         ".git",
         ".taskpilot",

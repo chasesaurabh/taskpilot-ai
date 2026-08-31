@@ -45,13 +45,18 @@ flowchart TD
     Plan --> Impact[Repository impact analysis]
     Architecture --> Approval{Human approval}
     Impact --> Approval
-    Approval -->|approved| Implement[Implementation]
+    Approval -->|approved| Implement[Propose implementation]
     Approval -->|rejected| Report[Final report]
-    Implement --> Test[Validation]
+    Implement --> WriteApproval{Write approval}
+    WriteApproval -->|approved| Apply[Apply changes]
+    WriteApproval -->|rejected| Report
+    Apply --> CommandApproval{Command approval}
+    CommandApproval -->|approved| Test[Validation]
+    CommandApproval -->|rejected| Report
     Test -->|passed| Review[AI-assisted review]
     Test -->|failed and retry budget remains| Diagnose[Failure analysis]
-    Diagnose --> Repair[Repair]
-    Repair --> Test
+    Diagnose --> Repair[Propose repair]
+    Repair --> WriteApproval
     Test -->|retry budget exhausted| Report
     Review -->|blocking and budget remains| Repair
     Review -->|accepted or exhausted| Report
@@ -70,7 +75,7 @@ The graph uses a versioned `WorkflowState` schema. Nodes return partial updates 
 | Repository descriptor and context manifest | context node | Replaced when context is refreshed |
 | Task analysis and plan | analysis/planning nodes | Stable after approval unless explicitly revised |
 | Architecture and impact findings | parallel analysis nodes | Stable after join |
-| Approval request and decisions | approval node | Append-only decisions |
+| Approval request and decisions | plan/write/command approval nodes | Append-only decisions |
 | Proposed/applied changes | implementation/repair nodes | Replaced per attempt; applied records append |
 | Validation and diagnosis | test/diagnosis nodes | Latest result plus bounded attempt summaries |
 | Retry counters | deterministic routing nodes | Monotonic and policy bounded |
@@ -78,7 +83,7 @@ The graph uses a versioned `WorkflowState` schema. Nodes return partial updates 
 | Model decisions and usage | model gateway | Append-only bounded summaries |
 | Terminal outcome | report node | Set once after deterministic outcome evaluation |
 
-Repository context stores file metadata and hashes rather than a full source snapshot. Proposed file contents remain in the checkpoint because they are needed to resume hash-guarded writes, but the API redacts those contents and exposes byte counts instead. Validation output is bounded before entering state. A separate artifact store is intentionally deferred until the project needs long-term retention of full logs or patches.
+Repository context stores file metadata and hashes rather than a full source snapshot. Proposed file contents and application-owned hash preconditions remain in the checkpoint so a write approval can resume safely, while the API redacts contents and exposes byte counts. Full patches and validation logs cross an artifact boundary into immutable local or S3-compatible objects; graph state and events retain only bounded summaries plus artifact references and digests.
 
 ## Execution lifecycle
 
@@ -118,7 +123,7 @@ sequenceDiagram
 
 ## Persistence and resume
 
-LangGraph checkpoints are authoritative for graph position and workflow state. The run store is a query-optimized projection for API status, timestamps, ownership, and terminal outcome. The event store is append-only and provides monotonic sequence numbers for replayable SSE. Public event payloads are bounded and redact file content; a separate artifact store for bulky output is future work.
+LangGraph checkpoints are authoritative for graph position and workflow state. The run store is a query-optimized projection for API status, timestamps, owner identity, and terminal outcome. The event store is append-only and provides monotonic sequence numbers for replayable SSE. Public event payloads are bounded and redact file content; immutable artifact objects retain full patches and command logs outside the checkpoint database.
 
 Local mode uses async SQLite adapters. Production mode uses PostgreSQL implementations for LangGraph checkpoints, run projections, and the event log while retaining their logical separation. PostgreSQL event sequences are allocated under a transaction-scoped advisory lock; lifecycle transitions remain compare-and-set operations. The run ID is also the LangGraph `thread_id`. Approval resumes the same thread with `Command(resume=...)`, so duplicate approvals or competing workers cannot resume a graph twice.
 
@@ -140,15 +145,15 @@ Repository input and model output are untrusted. Every operation resolves paths 
 - write: atomic create/replace of explicitly named files with precondition hashes;
 - execute: argument-vector commands matched against configured prefixes.
 
-There is no general shell tool. Commands do not use shell interpolation, inherit only an allowlisted environment, have time and output limits, and run in the repository root. The current graph gates the combined plan before any write or command; independent write and command approval flags are reserved in policy but are not yet separate interrupts. These controls reduce accidents but are not isolation from a malicious repository; disposable containers or VMs are required for that threat model.
+There is no general shell tool. Commands do not use shell interpolation, inherit only an allowlisted environment, and have time and output limits. Independent policy flags can interrupt before each patch application and each validation-command batch. The optional container backend executes validation with no network, dropped capabilities, PID/CPU/memory limits, a temporary filesystem, and only the repository bind mount. Host execution remains the local default.
 
 ## Human approval
 
-The default policy requires one approval after the plan and parallel architecture/impact analysis, before any write. The interrupt payload contains the plan, findings, intended files, proposed validation commands, risks, and policy-relevant actions. A rejection accepts an optional reason and terminates with an auditable report. Separate write and command interrupts are a documented extension point, not a current capability.
+The default policy requires one approval after the plan and parallel architecture/impact analysis. Optional write and command policies add persisted interrupts after proposal generation but before patch application, and after patch application but before validation. Repairs pass through the same gates. Each request has a deterministic approval ID; decisions append to history, duplicate resumes lose a compare-and-set transition, and rejection terminates with an auditable report.
 
 ## Streaming
 
-The graph emits typed internal events. The application service normalizes them into stable public events and persists each event before live publication. `GET /runs/{id}/events` uses Server-Sent Events because updates are server-to-client, browsers reconnect natively, and `Last-Event-ID` supports replay. Mutations such as approval and rejection remain ordinary HTTP requests; authentication is a deployment responsibility in this preview. A future `/v1` API will version the public schema before backward-incompatible changes are introduced.
+The graph emits typed internal events. The application service normalizes them into stable public events and persists each event before live publication. `GET /runs/{id}/events` uses Server-Sent Events and `Last-Event-ID` supports replay. Mutations remain ordinary HTTP requests. When opaque bearer tokens are configured, run lookup/listing, SSE, approvals, and artifact downloads are owner-scoped and the authenticated principal becomes the approval actor. A future `/v1` API will version the public schema before backward-incompatible changes are introduced.
 
 ## Failure recovery
 
@@ -160,12 +165,12 @@ Structured JSON logs bind request IDs at the HTTP boundary and run IDs around gr
 
 ## Deployment model
 
-Local development runs API, worker, and SQLite in one process, plus the Vite frontend. Docker Compose adds PostgreSQL and independently runnable API/web services. The first production-oriented deployment still assumes a trusted single installation. A future worker queue can claim persisted runnable runs using leases without changing graph or API contracts.
+Local development runs graph orchestration and SQLite in the API process, plus the Vite frontend. Docker Compose adds PostgreSQL and independently runnable API/web services. Bearer principals isolate run metadata and artifacts for multiple users. Validation commands can be delegated to ephemeral container workers; horizontally scaled graph-worker queues and enterprise identity federation remain later control-plane extensions.
 
 ## Major tradeoffs
 
 - **Custom API over LangGraph Agent Server:** demonstrates and controls the application lifecycle, event schema, and security boundary; requires more persistence plumbing.
 - **SSE over WebSockets:** simpler replay and operations for one-way progress; interactive token-by-token bidirectional sessions are out of scope.
-- **Bounded payloads before an artifact store:** fewer moving parts and complete durable resume today; very large patch/log retention will require an object-store-backed artifact boundary later.
-- **In-process local worker first:** excellent developer experience and deterministic tests; horizontal execution requires the documented lease/worker evolution.
+- **Artifact references in state:** checkpoints and SSE remain bounded while local/S3 objects retain full evidence; operators must apply object-store lifecycle and encryption policy.
+- **In-process orchestration, isolated commands:** excellent local experience with an opt-in container boundary for repository execution; horizontal graph execution still requires a lease/queue layer.
 - **Allowlisted host processes:** practical for trusted development; hostile repositories require external isolation.

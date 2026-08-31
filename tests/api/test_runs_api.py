@@ -9,10 +9,13 @@ from langgraph.types import interrupt
 
 from taskpilot.api import create_app
 from taskpilot.application.runs import RunService
+from taskpilot.artifacts import LocalArtifactStore
+from taskpilot.auth import TokenAuthenticator
 from taskpilot.domain.models import (
     AnalysisReport,
     ApprovalDecision,
     ApprovalStatus,
+    ArtifactKind,
     ChangeSet,
     FinalReport,
     ImplementationPlan,
@@ -123,10 +126,12 @@ def test_api_create_approve_status_and_sse_replay(tmp_path: Path) -> None:
         repository = tmp_path / "repo"
         repository.mkdir()
         store = await SqliteRunStore.open(tmp_path / "runs.sqlite")
+        artifacts = LocalArtifactStore(tmp_path / "artifacts")
         service = RunService(
             graph=build_workflow(_api_nodes(), checkpointer=InMemorySaver()),
             store=store,
             repository_policy=RepositoryToolPolicy(allowed_roots=(tmp_path,)),
+            artifacts=artifacts,
             model_profiles=("balanced", "private"),
             default_model_profile="balanced",
         )
@@ -227,6 +232,82 @@ def test_api_reject_is_idempotently_guarded_and_unknown_run_is_404(tmp_path: Pat
                 )
                 assert duplicate.status_code == 409
                 await _wait_for_status(store, run_id, RunStatus.REJECTED)
+        finally:
+            await service.wait_for_background_tasks()
+            await store.close()
+
+    asyncio.run(scenario())
+
+
+def test_bearer_auth_isolates_runs_and_owns_approval_actor(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        repository = tmp_path / "repo"
+        repository.mkdir()
+        store = await SqliteRunStore.open(tmp_path / "runs.sqlite")
+        artifacts = LocalArtifactStore(tmp_path / "artifacts")
+        service = RunService(
+            graph=build_workflow(_api_nodes(), checkpointer=InMemorySaver()),
+            store=store,
+            repository_policy=RepositoryToolPolicy(allowed_roots=(tmp_path,)),
+            artifacts=artifacts,
+        )
+        app = create_app(
+            service,
+            authenticator=TokenAuthenticator({"alice": "alice-secret", "bob": "bob-secret"}),
+        )
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                assert (await client.get("/model-profiles")).status_code == 401
+                alice_headers = {"Authorization": "Bearer alice-secret"}
+                created = await client.post(
+                    "/runs",
+                    headers=alice_headers,
+                    json={"repository": str(repository), "task": "Private change"},
+                )
+                assert created.status_code == 202
+                assert created.json()["owner_id"] == "alice"
+                run_id = created.json()["run_id"]
+                artifact = artifacts.put_text(
+                    run_id=run_id,
+                    kind=ArtifactKind.PATCH,
+                    content="private patch",
+                    media_type="text/x-diff",
+                )
+                await _wait_for_status(store, run_id, RunStatus.WAITING)
+
+                alice_runs = await client.get("/runs", headers=alice_headers)
+                assert [record["run_id"] for record in alice_runs.json()] == [run_id]
+                bob_runs = await client.get("/runs", headers={"Authorization": "Bearer bob-secret"})
+                assert bob_runs.json() == []
+
+                hidden = await client.get(
+                    f"/runs/{run_id}", headers={"Authorization": "Bearer bob-secret"}
+                )
+                assert hidden.status_code == 404
+                hidden_artifact = await client.get(
+                    f"/runs/{run_id}/artifacts/{artifact.artifact_id}",
+                    headers={"Authorization": "Bearer bob-secret"},
+                )
+                assert hidden_artifact.status_code == 404
+                downloaded = await client.get(
+                    f"/runs/{run_id}/artifacts/{artifact.artifact_id}",
+                    headers=alice_headers,
+                )
+                assert downloaded.content == b"private patch"
+                assert downloaded.headers["X-Artifact-SHA256"] == artifact.sha256
+
+                approved = await client.post(
+                    f"/runs/{run_id}/approve",
+                    headers=alice_headers,
+                    json={},
+                )
+                assert approved.status_code == 202
+                await _wait_for_status(store, run_id, RunStatus.COMPLETED)
+                events = await store.list_events(run_id)
+                decided = next(event for event in events if event.event_type == "approval.decided")
+                assert decided.data["actor"] == "alice"
         finally:
             await service.wait_for_background_tasks()
             await store.close()

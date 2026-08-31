@@ -1,0 +1,20 @@
+name: bundled-demo-pagination
+cases:
+  - name: add-pagination
+    repository: ../../examples/sample-api
+    task: Add pagination to the products endpoint and update tests
+    expectation:
+      outcome: completed
+      changed_files:
+        - sample_api/app.py
+        - tests/test_app.py
+      path_contains:
+        - planning
+        - approval
+        - implementation
+        - apply_changes
+        - testing
+        - code_review
+        - final_report
+      min_repairs: 0
+      max_repairs: 2

@@ -8,6 +8,9 @@ export const NODE_IDS = [
   'repository_analysis',
   'approval',
   'implementation',
+  'write_approval',
+  'apply_changes',
+  'command_approval',
   'testing',
   'failure_analysis',
   'repair',
@@ -23,6 +26,9 @@ export const NODE_LABELS: Record<string, string> = {
   repository_analysis: 'Repo impact',
   approval: 'Approval',
   implementation: 'Implement',
+  write_approval: 'Approve write',
+  apply_changes: 'Apply patch',
+  command_approval: 'Approve command',
   testing: 'Validate',
   failure_analysis: 'Diagnose',
   repair: 'Repair',
@@ -67,11 +73,13 @@ export function reduceWorkflowEvent(state: WorkflowViewState, event: RunEvent): 
 
   let approvalPayload = state.approvalPayload;
   if (event.event_type === 'approval.required') {
-    nodes.approval = { ...nodes.approval, status: 'waiting', latestEvent: event };
+    const approvalNode = event.node ?? 'approval';
+    nodes[approvalNode] = { ...nodes[approvalNode], status: 'waiting', latestEvent: event };
     approvalPayload = event.data;
   } else if (event.event_type === 'approval.decided') {
-    nodes.approval = {
-      ...nodes.approval,
+    const approvalNode = event.node ?? 'approval';
+    nodes[approvalNode] = {
+      ...nodes[approvalNode],
       status: 'completed',
       completedAt: event.created_at,
       latestEvent: event,

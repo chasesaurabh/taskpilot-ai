@@ -10,10 +10,18 @@ from taskpilot.persistence.runs import RunEvent, RunRecord
 
 class RunStore(Protocol):
     async def create_run(
-        self, *, run_id: str, task: str, repository: str, policy: WorkflowPolicy
+        self,
+        *,
+        run_id: str,
+        task: str,
+        repository: str,
+        policy: WorkflowPolicy,
+        owner_id: str = "local",
     ) -> RunRecord: ...
 
     async def get_run(self, run_id: str) -> RunRecord: ...
+
+    async def list_runs(self, *, owner_id: str, limit: int = 100) -> tuple[RunRecord, ...]: ...
 
     async def transition(
         self,

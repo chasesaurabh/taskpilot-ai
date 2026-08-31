@@ -11,6 +11,7 @@ import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
+from taskpilot.artifacts import ArtifactStore, LocalArtifactStore
 from taskpilot.domain.models import (
     AnalysisReport,
     FailureDiagnosis,
@@ -119,6 +120,7 @@ def _graph(
     repair_content: str = "good\n",
     blocking_review_once: bool = False,
     checkpointer: Any | None = None,
+    artifact_store: ArtifactStore | None = None,
 ):
     repository_policy = RepositoryToolPolicy(
         allowed_roots=(repository.parent,),
@@ -133,6 +135,7 @@ def _graph(
             blocking_review_once=blocking_review_once,
         ),
         repository_policy=repository_policy,
+        artifact_store=artifact_store,
     )
     return build_workflow(nodes.as_workflow_nodes(), checkpointer=checkpointer)
 
@@ -152,7 +155,8 @@ def test_real_nodes_apply_repair_retest_review_and_report(
     monkeypatch.setenv(
         "PATH", f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}"
     )
-    graph = _graph(repository)
+    artifact_store = LocalArtifactStore(tmp_path / "artifacts")
+    graph = _graph(repository, artifact_store=artifact_store)
 
     result = graph.invoke(
         create_initial_state(
@@ -166,6 +170,13 @@ def test_real_nodes_apply_repair_retest_review_and_report(
     assert (repository / "value.txt").read_text(encoding="utf-8") == "good\n"
     assert result["repair_attempts"] == 1
     assert result["validation"].passed is True
+    assert result["change_set"].artifacts[0].kind == "patch"
+    assert result["validation"].artifacts[-1].kind == "validation_log"
+    _, validation_log = artifact_store.get_bytes(
+        run_id="real-success",
+        artifact_id=result["validation"].artifacts[-1].artifact_id,
+    )
+    assert validation_log == b""
     assert result["final_report"].outcome == RunStatus.COMPLETED
     assert len(result["model_decisions"]) == 9
 
@@ -216,7 +227,16 @@ def test_blocking_review_drives_a_focused_repair_without_stale_validation_diagno
 
     history = [record.node for record in result["node_history"]]
     assert history.count("code_review") == 2
-    assert history[-5:] == ["code_review", "repair", "testing", "code_review", "final_report"]
+    assert history[-8:] == [
+        "code_review",
+        "repair",
+        "write_approval",
+        "apply_changes",
+        "command_approval",
+        "testing",
+        "code_review",
+        "final_report",
+    ]
     assert result["repair_attempts"] == 2
     assert result["final_report"].outcome == RunStatus.COMPLETED
 
@@ -374,5 +394,52 @@ def test_real_approval_interrupt_discloses_plan_and_blocks_writes(
         config,
     )
 
-    assert result["approval"].actor == "principal@example.com"
+    assert result["approval_history"][0].actor == "principal@example.com"
     assert result["final_report"].outcome == RunStatus.COMPLETED
+
+
+def test_write_and_command_gates_pause_before_each_side_effect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository = _repository(tmp_path)
+    monkeypatch.setenv(
+        "PATH", f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}"
+    )
+    graph = _graph(repository, checkpointer=InMemorySaver())
+    config = {"configurable": {"thread_id": "side-effect-gates"}}
+    policy = WorkflowPolicy(
+        require_plan_approval=False,
+        require_write_approval=True,
+        require_command_approval=True,
+    )
+
+    write_pause = graph.invoke(
+        create_initial_state(
+            run_id="side-effect-gates",
+            task="Set the value to good",
+            repository_root=str(repository),
+            policy=policy,
+        ),
+        config,
+    )
+
+    assert write_pause["__interrupt__"][0].value["kind"] == "write"
+    assert (repository / "value.txt").read_bytes() == b"initial\n"
+
+    command_pause = graph.invoke(
+        Command(resume={"action": "approve", "actor": "reviewer@example.com"}), config
+    )
+
+    assert command_pause["__interrupt__"][0].value["kind"] == "command"
+    assert (repository / "value.txt").read_bytes() == b"bad\n"
+
+    result = graph.invoke(
+        Command(resume={"action": "reject", "actor": "operator@example.com"}), config
+    )
+
+    assert result["final_report"].outcome == RunStatus.REJECTED
+    assert [decision.kind for decision in result["approval_history"]] == [
+        "plan",
+        "write",
+        "command",
+    ]

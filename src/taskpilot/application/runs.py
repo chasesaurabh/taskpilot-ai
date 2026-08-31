@@ -13,12 +13,14 @@ from fastapi.encoders import jsonable_encoder
 from langgraph.types import Command
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
+from taskpilot.artifacts import ArtifactStore
 from taskpilot.domain.models import ApprovalAction, RunStatus, WorkflowPolicy
 from taskpilot.graph.state import create_initial_state
 from taskpilot.models.errors import ModelConfigurationError
 from taskpilot.persistence.protocols import RunStore
 from taskpilot.persistence.runs import (
     RunConflictError,
+    RunNotFoundError,
     RunRecord,
 )
 from taskpilot.tools.repository import RepositoryWorkspace
@@ -36,12 +38,14 @@ class RunService:
         repository_policy: RepositoryToolPolicy,
         model_profiles: tuple[str, ...] = ("default",),
         default_model_profile: str = "default",
+        artifacts: ArtifactStore | None = None,
     ) -> None:
         self._graph = graph
         self.store = store
         self._repository_policy = repository_policy
         self.model_profiles = tuple(sorted(model_profiles))
         self.default_model_profile = default_model_profile
+        self.artifacts = artifacts
         if self.default_model_profile not in self.model_profiles:
             raise ValueError("The default model profile must be available")
         self._tasks: set[asyncio.Task[None]] = set()
@@ -52,6 +56,7 @@ class RunService:
         task: str,
         repository: str,
         policy: WorkflowPolicy,
+        owner_id: str = "local",
     ) -> RunRecord:
         selected_profile = policy.model_profile or self.default_model_profile
         if selected_profile not in self.model_profiles:
@@ -67,6 +72,7 @@ class RunService:
             task=task,
             repository=str(workspace.root),
             policy=policy,
+            owner_id=owner_id,
         )
         await self.store.append_event(
             run_id,
@@ -75,6 +81,7 @@ class RunService:
                 "task": task,
                 "repository": str(workspace.root),
                 "model_profile": selected_profile,
+                "owner_id": owner_id,
             },
             idempotency_key="run.created",
         )
@@ -104,27 +111,51 @@ class RunService:
         action: ApprovalAction,
         actor: str,
         reason: str | None,
+        owner_id: str = "local",
     ) -> RunRecord:
+        waiting = await self.get_owned_run(run_id, owner_id=owner_id)
+        request = waiting.approval.get("request", {}) if waiting.approval else {}
+        approval_id = str(request.get("approval_id", "approval"))
+        kind = str(request.get("kind", "plan"))
         record = await self.store.transition(
             run_id,
             expected={RunStatus.WAITING},
             target=RunStatus.RUNNING,
-            approval={"action": action, "actor": actor, "reason": reason},
+            approval={
+                "approval_id": approval_id,
+                "kind": kind,
+                "action": action,
+                "actor": actor,
+                "reason": reason,
+            },
         )
         await self.store.append_event(
             run_id,
             "approval.decided",
-            node="approval",
-            data={"action": action, "actor": actor, "reason": reason},
-            idempotency_key="approval.decided",
+            node=_approval_node(kind),
+            data={
+                "approval_id": approval_id,
+                "kind": kind,
+                "action": action,
+                "actor": actor,
+                "reason": reason,
+            },
+            idempotency_key=f"approval.decided:{approval_id}",
         )
         self._spawn(
             self._drive(
                 run_id,
                 Command(resume={"action": action, "actor": actor, "reason": reason}),
                 resumed=True,
+                resume_id=approval_id,
             )
         )
+        return record
+
+    async def get_owned_run(self, run_id: str, *, owner_id: str) -> RunRecord:
+        record = await self.store.get_run(run_id)
+        if record.owner_id != owner_id:
+            raise RunNotFoundError(f"Run not found: {run_id}")
         return record
 
     def _spawn(self, coroutine: Any) -> None:
@@ -136,16 +167,24 @@ class RunService:
         if self._tasks:
             await asyncio.gather(*tuple(self._tasks))
 
-    async def _drive(self, run_id: str, graph_input: Any, *, resumed: bool) -> None:
+    async def _drive(
+        self,
+        run_id: str,
+        graph_input: Any,
+        *,
+        resumed: bool,
+        resume_id: str | None = None,
+    ) -> None:
         clear_contextvars()
         bind_contextvars(run_id=run_id)
         logger = structlog.get_logger(__name__)
         config = {"configurable": {"thread_id": run_id}}
         interrupted = False
+        pending_approval: dict[str, Any] | None = None
         await self.store.append_event(
             run_id,
             "run.resumed" if resumed else "run.started",
-            idempotency_key="run.resumed" if resumed else "run.started",
+            idempotency_key=f"run.resumed:{resume_id}" if resumed else "run.started",
         )
         logger.info("workflow_started", resumed=resumed)
         try:
@@ -160,12 +199,15 @@ class RunService:
                 if "__interrupt__" in chunk:
                     interrupted = True
                     interrupt_value = chunk["__interrupt__"][0].value
+                    pending_approval = jsonable_encoder(interrupt_value)
+                    approval_id = str(pending_approval.get("approval_id", "approval"))
+                    kind = str(pending_approval.get("kind", "plan"))
                     await self.store.append_event(
                         run_id,
                         "approval.required",
-                        node="approval",
-                        data=jsonable_encoder(interrupt_value),
-                        idempotency_key="approval.required",
+                        node=_approval_node(kind),
+                        data=pending_approval,
+                        idempotency_key=f"approval.required:{approval_id}",
                     )
                     continue
                 for node, update in chunk.items():
@@ -181,6 +223,7 @@ class RunService:
                     run_id,
                     expected={RunStatus.RUNNING},
                     target=RunStatus.WAITING,
+                    approval={"request": pending_approval or {}},
                 )
                 logger.info("workflow_waiting_for_approval")
                 return
@@ -254,6 +297,7 @@ class RunService:
                 data={"tool": "write_file", **change_set},
                 idempotency_key=f"derived:{parent_sequence}:changes",
             )
+            await self._emit_artifact_events(run_id, node, change_set, parent_sequence)
         if "validation" in public:
             validation = public["validation"]
             await self.store.append_event(
@@ -262,6 +306,23 @@ class RunService:
                 node=node,
                 data={"tool": "execute", **validation},
                 idempotency_key=f"derived:{parent_sequence}:validation",
+            )
+            await self._emit_artifact_events(run_id, node, validation, parent_sequence)
+
+    async def _emit_artifact_events(
+        self,
+        run_id: str,
+        node: str,
+        payload: dict[str, Any],
+        parent_sequence: int,
+    ) -> None:
+        for index, artifact in enumerate(payload.get("artifacts", [])):
+            await self.store.append_event(
+                run_id,
+                "artifact.created",
+                node=node,
+                data=artifact,
+                idempotency_key=f"derived:{parent_sequence}:artifact:{index}",
             )
 
     async def _handle_task_event(self, run_id: str, chunk: dict[str, Any]) -> None:
@@ -296,3 +357,9 @@ def _public_update(update: Any) -> dict[str, Any]:
                 change["content_bytes"] = len(content.encode())
                 change["content_redacted"] = True
     return encoded
+
+
+def _approval_node(kind: str) -> str:
+    return {"plan": "approval", "write": "write_approval", "command": "command_approval"}.get(
+        kind, "approval"
+    )

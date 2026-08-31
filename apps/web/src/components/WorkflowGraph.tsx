@@ -27,11 +27,14 @@ const positions: Record<string, { x: number; y: number }> = {
   repository_analysis: { x: 570, y: 205 },
   approval: { x: 775, y: 115 },
   implementation: { x: 970, y: 115 },
-  testing: { x: 1160, y: 115 },
-  failure_analysis: { x: 1160, y: 290 },
-  repair: { x: 970, y: 290 },
-  code_review: { x: 1350, y: 115 },
-  final_report: { x: 1540, y: 115 },
+  write_approval: { x: 1160, y: 115 },
+  apply_changes: { x: 1350, y: 115 },
+  command_approval: { x: 1540, y: 115 },
+  testing: { x: 1730, y: 115 },
+  failure_analysis: { x: 1540, y: 290 },
+  repair: { x: 1350, y: 290 },
+  code_review: { x: 1920, y: 115 },
+  final_report: { x: 2110, y: 115 },
 };
 
 const edgePairs = [
@@ -42,11 +45,14 @@ const edgePairs = [
   ['architecture_review', 'approval'],
   ['repository_analysis', 'approval'],
   ['approval', 'implementation'],
-  ['implementation', 'testing'],
+  ['implementation', 'write_approval'],
+  ['write_approval', 'apply_changes'],
+  ['apply_changes', 'command_approval'],
+  ['command_approval', 'testing'],
   ['testing', 'code_review'],
   ['testing', 'failure_analysis'],
   ['failure_analysis', 'repair'],
-  ['repair', 'testing'],
+  ['repair', 'write_approval'],
   ['code_review', 'final_report'],
 ];
 
