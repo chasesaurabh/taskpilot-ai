@@ -2,10 +2,11 @@
 
 ## Decision
 
-**Release candidate, pending the paid live-provider Scenario B and hosted CI.** The code, migrations,
-deterministic scenario, S3-compatible boundary, and container boundary have been exercised locally.
-No provider credential or private live policy was present during this review, so the paid multi-file
-scenario was not run and the release must not be tagged or published yet.
+**Release candidate, pending the paid live-provider Scenario B.** The code, migrations,
+deterministic scenario, S3-compatible boundary, container boundary, production images, and static
+security analysis have passed locally and in hosted CI. No provider credential or private live policy
+was present during this review, so the paid multi-file scenario was not run and the release must not
+be tagged or published yet.
 
 ## Gate record
 
@@ -22,7 +23,8 @@ scenario was not run and the release must not be tagged or published yet.
 | Python artifacts/dependency audit | Pass | Wheel and sdist built as 0.2.0; pip-audit found no known dependency vulnerabilities |
 | Compose image build | Pass | API and web production images built locally, including the OIDC extra |
 | Paid live Scenario B | **Blocked external gate** | No live provider credentials or private live policy were available |
-| Hosted PostgreSQL/CI matrix | Pending | Runs in the repository's self-hosted CI service matrix |
+| Hosted PostgreSQL/CI matrix | Pass | [CI run 33500751038](https://github.com/chasesaurabh/taskpilot-ai/actions/runs/33500751038) passed backend, frontend, audits, services, and image builds |
+| CodeQL | Pass | [CodeQL run 33500751410](https://github.com/chasesaurabh/taskpilot-ai/actions/runs/33500751410) passed Python and JavaScript/TypeScript analysis |
 
 ## Migration scope
 
