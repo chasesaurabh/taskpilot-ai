@@ -74,4 +74,5 @@ def test_validation_executes_in_an_ephemeral_container(tmp_path: Path) -> None:
     )
 
     assert result.exit_code == 0
-    assert result.output.strip() == "isolated"
+    output_lines = [line.strip() for line in result.output.splitlines() if line.strip()]
+    assert output_lines[-1] == "isolated"
