@@ -16,6 +16,20 @@ All notable changes to TaskPilot AI are documented in this file. The project fol
   dropped capabilities, resource limits, and a constrained repository mount.
 - YAML model-backed evaluation datasets and a `taskpilot evaluate` runner that asserts outcomes,
   files, graph paths, and repair bounds through the public API.
+- Crash-safe multi-file repository transactions, persisted operation identities, replay of completed
+  effects, and fail-closed recovery for commands whose completion is uncertain.
+- Database-backed graph-worker leasing with expired-lease recovery and cross-process event refresh,
+  allowing API and worker processes to scale independently.
+- OIDC JWT validation with rotating JWKS keys, issuer/audience/expiry enforcement, role-gated
+  approvals, admin run/event inspection, and durable approval authorization audits.
+- Deterministic relevance-ranked repository context instead of alphabetical truncation.
+- SQLite upgrade coverage plus release-gated S3-compatible artifact and container execution tests.
+
+### Changed
+
+- Package, API, and web metadata now identify the v0.2.0 release line.
+- Dataset evaluation runs against an isolated repository copy, preserving source fixtures.
+- CLI evaluation results use Windows-safe status labels.
 
 ## [0.1.0] - 2026-08-29
 

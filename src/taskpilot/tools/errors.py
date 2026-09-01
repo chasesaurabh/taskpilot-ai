@@ -23,3 +23,7 @@ class FileLimitError(RepositoryToolError):
 
 class FileConflictError(RepositoryToolError):
     """A guarded write found an unexpected current file version."""
+
+
+class OperationUncertainError(RepositoryToolError):
+    """A prior command may have completed and must not be repeated automatically."""

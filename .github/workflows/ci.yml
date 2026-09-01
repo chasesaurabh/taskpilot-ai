@@ -37,6 +37,11 @@ jobs:
           --health-retries 10
     env:
       TASKPILOT_TEST_POSTGRES_URL: postgresql://taskpilot:taskpilot@127.0.0.1:5432/taskpilot_test
+      TASKPILOT_TEST_S3_ENDPOINT_URL: http://127.0.0.1:19000
+      TASKPILOT_TEST_CONTAINER_IMAGE: python:3.12-slim
+      AWS_ACCESS_KEY_ID: taskpilot-test
+      AWS_SECRET_ACCESS_KEY: taskpilot-test-secret
+      AWS_DEFAULT_REGION: us-east-1
     steps:
       - uses: actions/checkout@v7
         with:
@@ -48,6 +53,24 @@ jobs:
           enable-cache: true
       - name: Install dependencies
         run: uv sync --all-extras --frozen
+      - name: Start S3-compatible integration service
+        run: >-
+          docker run --detach --rm
+          --name taskpilot-minio-${{ github.run_id }}
+          --publish 127.0.0.1:19000:9000
+          --env MINIO_ROOT_USER=taskpilot-test
+          --env MINIO_ROOT_PASSWORD=taskpilot-test-secret
+          minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+      - name: Wait for S3-compatible integration service
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:19000/minio/health/live >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs taskpilot-minio-${{ github.run_id }}
+          exit 1
       - name: Verify formatting
         run: uv run ruff format --check .
       - name: Lint
@@ -61,6 +84,9 @@ jobs:
       - name: Test sample repository
         working-directory: examples/sample-api
         run: ../../.venv/bin/python -m pytest -q
+      - name: Stop S3-compatible integration service
+        if: always()
+        run: docker rm --force taskpilot-minio-${{ github.run_id }} || true
 
   frontend:
     name: Frontend quality and build

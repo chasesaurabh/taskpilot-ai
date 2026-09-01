@@ -125,9 +125,9 @@ sequenceDiagram
 
 LangGraph checkpoints are authoritative for graph position and workflow state. The run store is a query-optimized projection for API status, timestamps, owner identity, and terminal outcome. The event store is append-only and provides monotonic sequence numbers for replayable SSE. Public event payloads are bounded and redact file content; immutable artifact objects retain full patches and command logs outside the checkpoint database.
 
-Local mode uses async SQLite adapters. Production mode uses PostgreSQL implementations for LangGraph checkpoints, run projections, and the event log while retaining their logical separation. PostgreSQL event sequences are allocated under a transaction-scoped advisory lock; lifecycle transitions remain compare-and-set operations. The run ID is also the LangGraph `thread_id`. Approval resumes the same thread with `Command(resume=...)`, so duplicate approvals or competing workers cannot resume a graph twice.
+Local mode uses async SQLite adapters. Production mode uses PostgreSQL implementations for LangGraph checkpoints, run projections, and the event log while retaining their logical separation. PostgreSQL event sequences are allocated under a transaction-scoped advisory lock; lifecycle transitions remain compare-and-set operations. Queue claims use row locking with skip-locked semantics and renewable leases. The run ID is also the LangGraph `thread_id`. Approval queues a resume of the same thread with `Command(resume=...)`, so duplicate approvals or competing workers cannot resume a graph twice.
 
-The application captures file hashes before model invocation and supplies them to atomic writes; the model never owns concurrency preconditions. Event publication uses idempotency keys, and approval resume is guarded by a compare-and-set lifecycle transition. These controls do not provide exactly-once side effects: a crash inside a write-capable or command node can leave work after the last checkpoint. The current release proves restart/resume at the approval boundary; broader crash recovery requires idempotent worker operations or an external durable execution boundary.
+The application captures file hashes before model invocation and supplies them to batch writes; the model never owns concurrency preconditions. A write operation preflights every change, stages replacements and rollback copies, and records a deterministic operation identity outside the repository before committing. A completed operation replays its stored result, while an interrupted command is marked uncertain and is never repeated automatically. Event publication uses idempotency keys, approval resume is guarded by a compare-and-set transition, and an expired graph-worker lease resumes from the durable checkpoint. A host failure during rollback or an uncertain external command remains an explicit operator-recovery case rather than an unsafe automatic retry.
 
 ## Model abstraction and routing
 
@@ -137,12 +137,18 @@ Routing is explicit policy, not hidden model selection. Named profiles group a c
 
 The provider factory covers deterministic demo, OpenAI, Anthropic, and OpenAI-compatible endpoints. Local services can use the same compatible adapter when they implement the required chat and structured-output behavior. Credentials, organization identifiers, and custom header values are resolved from named environment variables. Static non-secret compatible-provider request fields may use bounded configuration fields such as `max_tokens` and `extra_body`. At startup, TaskPilot validates complete role coverage, model references, provider integration availability, required environment values, and the structured-model interface before accepting runs.
 
+Repository context is selected with a deterministic lexical relevance score over paths and bounded
+file content, using the task, objective, plan, or repair diagnosis as the query. Stable tie-breaking
+keeps evaluations repeatable while avoiding the blind spots of alphabetical truncation. This is a
+local retrieval layer, not an embedding service, so very large or semantically indirect codebases
+may still benefit from a future indexed hybrid retriever.
+
 ## Repository tool security
 
 Repository input and model output are untrusted. Every operation resolves paths against a canonical configured repository root and rejects absolute paths, traversal, escape through symlinks, oversized input, and unsupported encodings. Capabilities are separate:
 
 - read: list, bounded file read, literal/regex search, Git status/diff;
-- write: atomic create/replace of explicitly named files with precondition hashes;
+- write: transactional create/replace batches of explicitly named files with precondition hashes;
 - execute: argument-vector commands matched against configured prefixes.
 
 There is no general shell tool. Commands do not use shell interpolation, inherit only an allowlisted environment, and have time and output limits. Independent policy flags can interrupt before each patch application and each validation-command batch. The optional container backend executes validation with no network, dropped capabilities, PID/CPU/memory limits, a temporary filesystem, and only the repository bind mount. Host execution remains the local default.
@@ -153,11 +159,11 @@ The default policy requires one approval after the plan and parallel architectur
 
 ## Streaming
 
-The graph emits typed internal events. The application service normalizes them into stable public events and persists each event before live publication. `GET /runs/{id}/events` uses Server-Sent Events and `Last-Event-ID` supports replay. Mutations remain ordinary HTTP requests. When opaque bearer tokens are configured, run lookup/listing, SSE, approvals, and artifact downloads are owner-scoped and the authenticated principal becomes the approval actor. A future `/v1` API will version the public schema before backward-incompatible changes are introduced.
+The graph emits typed internal events. The application service normalizes them into stable public events and persists each event before live publication. `GET /runs/{id}/events` uses Server-Sent Events and `Last-Event-ID` supports replay; bounded durable-store refresh makes events visible when another process writes them. Mutations remain ordinary HTTP requests. Opaque bearer tokens or OIDC identities owner-scope run lookup/listing, SSE, approvals, and artifact downloads. The authenticated subject becomes the approval actor, optional roles authorize approvals, and the admin role enables fleet-wide run/event inspection. A future `/v1` API will version the public schema before backward-incompatible changes are introduced.
 
 ## Failure recovery
 
-Validation is deterministic: exit code, timeout, output truncation, and configured required commands determine pass or fail. A failed result enters diagnosis, then repair, then validation. The retry counter increments once per repair attempt and cannot exceed the policy snapshot. Exhaustion routes to a terminal `failed` report with the bounded final validation summary and stop reason. Unexpected node exceptions fail the run visibly and emit a typed error event; infrastructure retry classification is a future worker concern.
+Validation is deterministic: exit code, timeout, output truncation, and configured required commands determine pass or fail. A failed result enters diagnosis, then repair, then validation. The retry counter increments once per repair attempt and cannot exceed the policy snapshot. Exhaustion routes to a terminal `failed` report with the bounded final validation summary and stop reason. Unexpected node exceptions fail the run visibly and emit a typed error event. Independent workers recover expired leases from checkpoints; uncertain commands fail closed instead of being retried.
 
 ## Observability
 
@@ -165,12 +171,12 @@ Structured JSON logs bind request IDs at the HTTP boundary and run IDs around gr
 
 ## Deployment model
 
-Local development runs graph orchestration and SQLite in the API process, plus the Vite frontend. Docker Compose adds PostgreSQL and independently runnable API/web services. Bearer principals isolate run metadata and artifacts for multiple users. Validation commands can be delegated to ephemeral container workers; horizontally scaled graph-worker queues and enterprise identity federation remain later control-plane extensions.
+Local development runs graph orchestration and SQLite in the API process, plus the Vite frontend. Docker Compose adds PostgreSQL and independently runnable API/web services. Production can split queue-producing API replicas from lease-based graph workers, with PostgreSQL checkpoints/events and shared artifact/operation storage. Opaque or OIDC principals isolate run metadata and artifacts; OIDC roles protect approval and administrative operations. Validation commands can additionally run in fresh, network-disabled containers.
 
 ## Major tradeoffs
 
 - **Custom API over LangGraph Agent Server:** demonstrates and controls the application lifecycle, event schema, and security boundary; requires more persistence plumbing.
 - **SSE over WebSockets:** simpler replay and operations for one-way progress; interactive token-by-token bidirectional sessions are out of scope.
 - **Artifact references in state:** checkpoints and SSE remain bounded while local/S3 objects retain full evidence; operators must apply object-store lifecycle and encryption policy.
-- **In-process orchestration, isolated commands:** excellent local experience with an opt-in container boundary for repository execution; horizontal graph execution still requires a lease/queue layer.
+- **Embedded or leased orchestration:** embedded mode keeps local setup small; API/worker modes add durable queue claims and operational lease tuning for horizontal execution.
 - **Allowlisted host processes:** practical for trusted development; hostile repositories require external isolation.

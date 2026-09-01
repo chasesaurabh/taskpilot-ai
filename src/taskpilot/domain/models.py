@@ -49,7 +49,7 @@ class ArtifactKind(StrEnum):
 class RunMetadata(DomainModel):
     run_id: str = Field(min_length=1)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    state_schema_version: int = 1
+    state_schema_version: int = 2
 
 
 class TaskRequest(DomainModel):

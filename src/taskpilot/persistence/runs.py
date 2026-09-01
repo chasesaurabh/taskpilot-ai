@@ -32,6 +32,10 @@ class RunRecord(PersistenceModel):
     updated_at: datetime
     approval: dict[str, Any] | None = None
     final_report: FinalReport | None = None
+    lease_owner: str | None = None
+    lease_expires_at: datetime | None = None
+    execution_attempts: int = 0
+    lease_recovered: bool = False
 
 
 class RunEvent(PersistenceModel):
@@ -88,6 +92,9 @@ class SqliteRunStore:
                 status TEXT NOT NULL,
                 approval_json TEXT,
                 final_report_json TEXT,
+                lease_owner TEXT,
+                lease_expires_at TEXT,
+                execution_attempts INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -109,6 +116,13 @@ class SqliteRunStore:
             await self._connection.execute(
                 "ALTER TABLE runs ADD COLUMN owner_id TEXT NOT NULL DEFAULT 'local'"
             )
+        for name, definition in (
+            ("lease_owner", "TEXT"),
+            ("lease_expires_at", "TEXT"),
+            ("execution_attempts", "INTEGER NOT NULL DEFAULT 0"),
+        ):
+            if not any(row[1] == name for row in columns):
+                await self._connection.execute(f"ALTER TABLE runs ADD COLUMN {name} {definition}")
         await self._connection.commit()
 
     async def close(self) -> None:
@@ -162,6 +176,14 @@ class SqliteRunStore:
         await cursor.close()
         return tuple(_run_from_row(row) for row in rows)
 
+    async def list_all_runs(self, *, limit: int = 100) -> tuple[RunRecord, ...]:
+        cursor = await self._connection.execute(
+            "SELECT * FROM runs ORDER BY created_at DESC LIMIT ?", (limit,)
+        )
+        rows = await cursor.fetchall()
+        await cursor.close()
+        return tuple(_run_from_row(row) for row in rows)
+
     async def transition(
         self,
         run_id: str,
@@ -170,23 +192,31 @@ class SqliteRunStore:
         target: RunStatus,
         approval: dict[str, Any] | None = None,
         final_report: FinalReport | None = None,
+        lease_owner: str | None = None,
     ) -> RunRecord:
         now = datetime.now(UTC).isoformat()
         expected_values = tuple(status.value for status in expected)
         placeholders = ",".join("?" for _ in expected_values)
         assignments = ["status = ?", "updated_at = ?"]
         parameters: list[Any] = [target.value, now]
+        if target != RunStatus.RUNNING:
+            assignments.extend(("lease_owner = NULL", "lease_expires_at = NULL"))
         if approval is not None:
             assignments.append("approval_json = ?")
             parameters.append(json.dumps(approval))
         if final_report is not None:
             assignments.append("final_report_json = ?")
             parameters.append(final_report.model_dump_json())
-        parameters.extend((run_id, *expected_values))
+        lease_condition = ""
+        parameters.append(run_id)
+        parameters.extend(expected_values)
+        if lease_owner is not None:
+            lease_condition = " AND lease_owner = ?"
+            parameters.append(lease_owner)
         async with self._write_lock:
             cursor = await self._connection.execute(
                 f"UPDATE runs SET {', '.join(assignments)} "
-                f"WHERE run_id = ? AND status IN ({placeholders})",
+                f"WHERE run_id = ? AND status IN ({placeholders}){lease_condition}",
                 parameters,
             )
             await self._connection.commit()
@@ -201,6 +231,72 @@ class SqliteRunStore:
                 f"Run '{run_id}' is '{current.status}', expected one of {sorted(expected_values)}"
             )
         return await self.get_run(run_id)
+
+    async def claim_next(self, *, worker_id: str, lease_seconds: float) -> RunRecord | None:
+        now = datetime.now(UTC)
+        expires = datetime.fromtimestamp(now.timestamp() + lease_seconds, UTC)
+        async with self._write_lock:
+            cursor = await self._connection.execute(
+                """
+                SELECT run_id, status FROM runs
+                WHERE status = ? OR (
+                    status = ? AND (lease_expires_at IS NULL OR lease_expires_at < ?)
+                )
+                ORDER BY created_at
+                LIMIT 1
+                """,
+                (RunStatus.QUEUED, RunStatus.RUNNING, now.isoformat()),
+            )
+            candidate = await cursor.fetchone()
+            await cursor.close()
+            if candidate is None:
+                return None
+            recovered = candidate["status"] == RunStatus.RUNNING
+            cursor = await self._connection.execute(
+                """
+                UPDATE runs
+                SET status = ?, lease_owner = ?, lease_expires_at = ?,
+                    execution_attempts = execution_attempts + 1, updated_at = ?
+                WHERE run_id = ? AND (
+                    status = ? OR (
+                        status = ? AND (lease_expires_at IS NULL OR lease_expires_at < ?)
+                    )
+                )
+                """,
+                (
+                    RunStatus.RUNNING,
+                    worker_id,
+                    expires.isoformat(),
+                    now.isoformat(),
+                    candidate["run_id"],
+                    RunStatus.QUEUED,
+                    RunStatus.RUNNING,
+                    now.isoformat(),
+                ),
+            )
+            await self._connection.commit()
+            changed = cursor.rowcount
+            await cursor.close()
+        if changed != 1:
+            return None
+        record = await self.get_run(candidate["run_id"])
+        return record.model_copy(update={"lease_recovered": recovered})
+
+    async def renew_lease(self, run_id: str, *, worker_id: str, lease_seconds: float) -> bool:
+        now = datetime.now(UTC)
+        expires = datetime.fromtimestamp(now.timestamp() + lease_seconds, UTC)
+        async with self._write_lock:
+            cursor = await self._connection.execute(
+                """
+                UPDATE runs SET lease_expires_at = ?, updated_at = ?
+                WHERE run_id = ? AND status = ? AND lease_owner = ?
+                """,
+                (expires.isoformat(), now.isoformat(), run_id, RunStatus.RUNNING, worker_id),
+            )
+            await self._connection.commit()
+            changed = cursor.rowcount
+            await cursor.close()
+        return changed == 1
 
     async def append_event(
         self,
@@ -297,6 +393,11 @@ def _run_from_row(row: aiosqlite.Row) -> RunRecord:
         status=RunStatus(row["status"]),
         approval=approval,
         final_report=final_report,
+        lease_owner=row["lease_owner"],
+        lease_expires_at=(
+            datetime.fromisoformat(row["lease_expires_at"]) if row["lease_expires_at"] else None
+        ),
+        execution_attempts=row["execution_attempts"],
         created_at=datetime.fromisoformat(row["created_at"]),
         updated_at=datetime.fromisoformat(row["updated_at"]),
     )

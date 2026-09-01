@@ -40,12 +40,23 @@ class AppSettings(BaseSettings):
     langsmith_enabled: bool = False
     demo_mode: bool = True
     auth_tokens: str | None = None
+    oidc_issuer: str | None = None
+    oidc_audience: str | None = None
+    oidc_jwks_url: str | None = None
+    oidc_roles_claim: str = "roles"
+    approval_role: str | None = None
+    admin_role: str = "admin"
     artifact_backend: str = "local"
     artifact_root: Path = Path(".taskpilot/artifacts")
     artifact_s3_bucket: str | None = None
     artifact_s3_prefix: str = "taskpilot"
     artifact_s3_endpoint_url: str | None = None
     artifact_s3_region: str | None = None
+    operation_root: Path = Path(".taskpilot/operations")
+    execution_mode: str = Field(default="embedded", pattern="^(embedded|api|worker|all)$")
+    worker_id: str | None = None
+    worker_lease_seconds: float = Field(default=300, gt=5, le=3600)
+    worker_poll_seconds: float = Field(default=0.5, gt=0, le=30)
 
     @property
     def repository_roots(self) -> tuple[Path, ...]:
@@ -147,6 +158,7 @@ def repository_policy(settings: AppSettings, policy: PolicyConfig) -> Repository
         container_image=policy.repository.container_image,
         container_memory=policy.repository.container_memory,
         container_cpus=policy.repository.container_cpus,
+        operation_root=settings.operation_root,
     )
 
 

@@ -26,6 +26,7 @@ class RepositoryToolPolicy(ToolModel):
     container_image: str | None = None
     container_memory: str = "2g"
     container_cpus: float = Field(default=2.0, gt=0, le=64)
+    operation_root: Path | None = None
     ignored_directories: tuple[str, ...] = (
         ".git",
         ".taskpilot",
@@ -62,6 +63,12 @@ class WriteResult(ToolModel):
     previous_sha256: str | None
     sha256: str
     size_bytes: int = Field(ge=0)
+
+
+class WriteRequest(ToolModel):
+    path: str
+    content: str
+    expected_sha256: str | None = None
 
 
 class CommandResult(ToolModel):

@@ -52,7 +52,7 @@ from taskpilot.prompts.catalog import (
 )
 from taskpilot.tools.errors import RepositoryToolError
 from taskpilot.tools.repository import RepositoryWorkspace
-from taskpilot.tools.types import RepositoryToolPolicy
+from taskpilot.tools.types import RepositoryToolPolicy, WriteRequest
 
 
 class EngineeringNodesConfig(BaseModel):
@@ -119,10 +119,14 @@ class EngineeringNodes:
     def _record(node: str, detail: str = "") -> list[NodeRecord]:
         return [NodeRecord(node=node, status="completed", detail=detail)]
 
-    def _context_text(self, workspace: RepositoryWorkspace) -> str:
+    def _context_text(self, workspace: RepositoryWorkspace, query: str) -> str:
         sections: list[str] = []
         consumed = 0
-        for entry in workspace.list_files()[: self._config.context_file_limit]:
+        for entry in workspace.select_files(
+            query,
+            max_files=self._config.context_file_limit,
+            max_bytes=self._config.max_context_bytes,
+        ):
             if consumed + entry.size_bytes > self._config.max_context_bytes:
                 break
             try:
@@ -139,11 +143,16 @@ class EngineeringNodes:
 
     def repository_context(self, state: WorkflowState) -> WorkflowUpdate:
         workspace = self._workspace(state)
-        entries = workspace.list_files()
+        all_entries = workspace.list_files()
+        entries = workspace.select_files(
+            state["task"].description,
+            max_files=self._config.context_file_limit,
+            max_bytes=self._config.max_context_bytes,
+        )
         files: list[ContextFile] = []
         consumed = 0
-        truncated = len(entries) > self._config.context_file_limit
-        for entry in entries[: self._config.context_file_limit]:
+        truncated = len(entries) < len(all_entries)
+        for entry in entries:
             if consumed + entry.size_bytes > self._config.max_context_bytes:
                 truncated = True
                 break
@@ -178,7 +187,7 @@ class EngineeringNodes:
             prompt=TASK_ANALYSIS_PROMPT,
             variables={
                 "task": state["task"].description,
-                "context": self._context_text(workspace),
+                "context": self._context_text(workspace, state["task"].description),
             },
             output_schema=TaskAnalysis,
         )
@@ -199,7 +208,10 @@ class EngineeringNodes:
             prompt=PLANNING_PROMPT,
             variables={
                 "analysis": state["task_analysis"].model_dump_json(indent=2),
-                "context": self._context_text(workspace),
+                "context": self._context_text(
+                    workspace,
+                    f"{state['task'].description}\n{state['task_analysis'].objective}",
+                ),
                 "allowed_commands": allowed_commands or "No validation commands are configured.",
             },
             output_schema=ImplementationPlan,
@@ -240,7 +252,10 @@ class EngineeringNodes:
             prompt=REPOSITORY_IMPACT_PROMPT,
             variables={
                 "plan": state["plan"].model_dump_json(indent=2),
-                "context": self._context_text(workspace),
+                "context": self._context_text(
+                    workspace,
+                    f"{state['task'].description}\n{state['plan'].model_dump_json()}",
+                ),
             },
             output_schema=AnalysisReport,
         )
@@ -275,7 +290,10 @@ class EngineeringNodes:
 
     def implementation(self, state: WorkflowState) -> WorkflowUpdate:
         workspace = self._workspace(state)
-        context, expected_hashes = self._proposal_context(workspace)
+        context, expected_hashes = self._proposal_context(
+            workspace,
+            f"{state['task'].description}\n{state['plan'].model_dump_json()}",
+        )
         call = self._models.invoke_structured(
             role=ModelRole.CODER,
             routing_context=self._routing_context(state),
@@ -310,7 +328,13 @@ class EngineeringNodes:
         expected_hashes = {
             item.path: item.expected_sha256 for item in state["proposal_preconditions"]
         }
-        change_set = self._apply_proposal(workspace, state["proposal"], expected_hashes)
+        operation_id = f"{state['metadata'].run_id}:write:{state.get('repair_attempts', 0)}"
+        change_set = self._apply_proposal(
+            workspace,
+            state["proposal"],
+            expected_hashes,
+            operation_id=operation_id,
+        )
         artifact = self._put_artifact(
             state,
             kind=ArtifactKind.PATCH,
@@ -351,9 +375,15 @@ class EngineeringNodes:
                 command=commands[-1],
                 summary="All configured validation commands passed",
             )
-            for command in commands:
+            for index, command in enumerate(commands):
                 try:
-                    result = workspace.execute(command)
+                    result = workspace.execute_once(
+                        command,
+                        operation_id=(
+                            f"{state['metadata'].run_id}:command:"
+                            f"{state.get('repair_attempts', 0)}:{index}"
+                        ),
+                    )
                 except RepositoryToolError as exc:
                     validation = ValidationResult(
                         passed=False,
@@ -427,7 +457,10 @@ class EngineeringNodes:
 
     def repair(self, state: WorkflowState) -> WorkflowUpdate:
         workspace = self._workspace(state)
-        context, expected_hashes = self._proposal_context(workspace)
+        context, expected_hashes = self._proposal_context(
+            workspace,
+            f"{state['task'].description}\n{state['plan'].model_dump_json()}",
+        )
         diagnosis = _repair_diagnosis(state)
         call = self._models.invoke_structured(
             role=ModelRole.CODER,
@@ -579,11 +612,16 @@ class EngineeringNodes:
     def _proposal_context(
         self,
         workspace: RepositoryWorkspace,
+        query: str,
     ) -> tuple[str, dict[str, str]]:
         sections: list[str] = []
         hashes: dict[str, str] = {}
         consumed = 0
-        for entry in workspace.list_files()[: self._config.context_file_limit]:
+        for entry in workspace.select_files(
+            query,
+            max_files=self._config.context_file_limit,
+            max_bytes=self._config.max_context_bytes,
+        ):
             if consumed + entry.size_bytes > self._config.max_context_bytes:
                 break
             try:
@@ -619,6 +657,8 @@ class EngineeringNodes:
         workspace: RepositoryWorkspace,
         proposal: ImplementationProposal,
         expected_hashes: dict[str, str | None],
+        *,
+        operation_id: str | None = None,
     ) -> ChangeSet:
         normalized_changes: list[tuple[str, ProposedFileChange]] = []
         seen: set[str] = set()
@@ -631,22 +671,27 @@ class EngineeringNodes:
             seen.add(normalized_path)
             normalized_changes.append((normalized_path, change))
 
-        applied: list[FileChange] = []
-        for normalized_path, change in normalized_changes:
-            result = workspace.write_file(
-                normalized_path,
-                change.content,
-                expected_sha256=expected_hashes.get(normalized_path),
-            )
-            applied.append(
-                FileChange(
-                    path=result.path,
-                    operation="create" if result.created else "replace",
-                    before_sha256=result.previous_sha256,
-                    after_sha256=result.sha256,
+        results = workspace.write_files(
+            tuple(
+                WriteRequest(
+                    path=normalized_path,
+                    content=change.content,
+                    expected_sha256=expected_hashes.get(normalized_path),
                 )
+                for normalized_path, change in normalized_changes
+            ),
+            operation_id=operation_id,
+        )
+        applied = tuple(
+            FileChange(
+                path=result.path,
+                operation="create" if result.created else "replace",
+                before_sha256=result.previous_sha256,
+                after_sha256=result.sha256,
             )
-        return ChangeSet(summary=proposal.summary, changes=tuple(applied))
+            for result in results
+        )
+        return ChangeSet(summary=proposal.summary, changes=applied)
 
 
 def _language_for(path: str) -> str | None:

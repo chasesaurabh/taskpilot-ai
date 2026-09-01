@@ -159,7 +159,7 @@ def evaluate_command(
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1) from exc
     for result in results:
-        marker = "[green]✓[/green]" if result.passed else "[red]✗[/red]"
+        marker = "[green]PASS[/green]" if result.passed else "[red]FAIL[/red]"
         console.print(f"{marker} {result.case} ({result.run_id})")
         for failure in result.failures:
             console.print(f"  [red]{failure}[/red]")

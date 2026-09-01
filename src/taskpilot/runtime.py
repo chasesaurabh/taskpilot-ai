@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
+import socket
 import sys
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 import structlog
@@ -15,7 +17,7 @@ from fastapi import FastAPI
 from taskpilot.api.app import create_app
 from taskpilot.application.runs import RunService
 from taskpilot.artifacts import ArtifactStore, LocalArtifactStore, S3ArtifactStore
-from taskpilot.auth import TokenAuthenticator
+from taskpilot.auth import Authenticator, OidcAuthenticator, TokenAuthenticator
 from taskpilot.configuration import AppSettings, load_policy, model_policy, repository_policy
 from taskpilot.graph.builder import build_workflow
 from taskpilot.models.demo import DeterministicModelFactory
@@ -79,8 +81,16 @@ def create_runtime_app(settings: AppSettings | None = None) -> FastAPI:
                     model_profiles=router.profiles,
                     default_model_profile=router.default_profile,
                     artifacts=artifacts,
+                    deferred_execution=resolved_settings.execution_mode != "embedded",
+                    worker_id=(
+                        resolved_settings.worker_id or f"{socket.gethostname()}-{os.getpid()}"
+                    ),
+                    lease_seconds=resolved_settings.worker_lease_seconds,
+                    worker_poll_seconds=resolved_settings.worker_poll_seconds,
                 )
                 application.state.run_service = service
+                if resolved_settings.execution_mode in {"worker", "all"}:
+                    service.start_worker()
                 structlog.get_logger(__name__).info(
                     "runtime_ready",
                     environment=resolved_settings.environment,
@@ -88,13 +98,17 @@ def create_runtime_app(settings: AppSettings | None = None) -> FastAPI:
                     repository_roots=[str(root) for root in tools.allowed_roots],
                 )
                 yield
+                if resolved_settings.execution_mode in {"worker", "all"}:
+                    await service.stop_worker()
                 await service.wait_for_background_tasks()
         finally:
             await store.close()
 
     return create_app(
         lifespan=lifespan,
-        authenticator=TokenAuthenticator.from_json(resolved_settings.auth_tokens),
+        authenticator=_authenticator(resolved_settings),
+        approval_role=resolved_settings.approval_role,
+        admin_role=resolved_settings.admin_role,
     )
 
 
@@ -142,9 +156,40 @@ def _open_artifact_store(settings: AppSettings) -> ArtifactStore:
     raise ValueError("TASKPILOT_ARTIFACT_BACKEND must be 'local' or 's3'")
 
 
+def _authenticator(settings: AppSettings) -> Authenticator:
+    oidc_values = (settings.oidc_issuer, settings.oidc_audience, settings.oidc_jwks_url)
+    if any(oidc_values):
+        if not all(oidc_values):
+            raise ValueError("OIDC issuer, audience, and JWKS URL must be configured together")
+        assert settings.oidc_issuer is not None
+        assert settings.oidc_audience is not None
+        assert settings.oidc_jwks_url is not None
+        return OidcAuthenticator(
+            issuer=settings.oidc_issuer,
+            audience=settings.oidc_audience,
+            jwks_url=settings.oidc_jwks_url,
+            roles_claim=settings.oidc_roles_claim,
+        )
+    return TokenAuthenticator.from_json(settings.auth_tokens)
+
+
 app = create_runtime_app()
 
 
 def main() -> None:
     settings = AppSettings()
     uvicorn.run("taskpilot.runtime:app", host=settings.host, port=settings.port, reload=False)
+
+
+async def _run_worker(settings: AppSettings) -> None:
+    worker_settings = settings.model_copy(update={"execution_mode": "worker"})
+    application = create_runtime_app(worker_settings)
+    async with application.router.lifespan_context(application):
+        await asyncio.Event().wait()
+
+
+def worker_main() -> None:
+    """Run only the durable graph-worker loop, without an HTTP listener."""
+
+    with suppress(KeyboardInterrupt):
+        asyncio.run(_run_worker(AppSettings()))

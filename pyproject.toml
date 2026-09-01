@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "taskpilot-ai"
-version = "0.1.0"
+version = "0.2.0"
 description = "Human-governed graph orchestration for software engineering delivery"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -47,6 +47,7 @@ Changelog = "https://github.com/chasesaurabh/taskpilot-ai/blob/main/CHANGELOG.md
 [project.scripts]
 taskpilot = "taskpilot.cli.app:app"
 taskpilot-api = "taskpilot.runtime:main"
+taskpilot-worker = "taskpilot.runtime:worker_main"
 
 [project.optional-dependencies]
 openai = ["langchain-openai>=1.0,<2"]
@@ -58,6 +59,7 @@ postgres = [
   "psycopg[binary,pool]>=3.2,<4",
 ]
 artifacts = ["boto3>=1.35,<2"]
+auth = ["pyjwt[crypto]>=2.10,<3"]
 dev = [
   "mypy>=1.14,<2",
   "pip-audit>=2.9,<3",
@@ -80,6 +82,8 @@ markers = [
   "scenario: repeatable end-to-end evaluation scenario",
   "live: opt-in integration test that invokes a configured model provider",
   "postgres: integration test requiring TASKPILOT_TEST_POSTGRES_URL",
+  "s3: integration test requiring TASKPILOT_TEST_S3_ENDPOINT_URL",
+  "container: integration test requiring TASKPILOT_TEST_CONTAINER_IMAGE",
 ]
 
 [tool.ruff]

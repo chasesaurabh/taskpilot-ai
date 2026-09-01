@@ -9,7 +9,7 @@ Graph execution needs complete resumable state, while APIs need efficient run qu
 
 ## Decision
 
-Use a versioned typed graph state and LangGraph checkpointer as the execution authority. Maintain a run projection and append-only event log for product queries. Keep repository context and command output bounded. Add an artifact boundary only when long-term full-patch or log retention is implemented.
+Use a versioned typed graph state and LangGraph checkpointer as the execution authority. Maintain a run projection and append-only event log for product queries. Keep repository context and command output bounded. Store full patches and validation logs behind immutable local/S3 artifact references rather than embedding them in public events.
 
 ## Alternatives considered
 
@@ -19,4 +19,4 @@ Use a versioned typed graph state and LangGraph checkpointer as the execution au
 
 ## Consequences
 
-Resume semantics stay native to LangGraph and public contracts stay stable. Operators must back up checkpoint and run/event data consistently. Proposed file content remains in trusted checkpoints for durable hash-guarded resume but is redacted from public events; long-term patch and full-log retention awaits the artifact adapter. State migrations require explicit schema-version handling.
+Resume semantics stay native to LangGraph and public contracts stay stable. Operators must back up checkpoint, run/event, operation, and artifact data consistently. Proposed file content remains in trusted checkpoints for durable hash-guarded resume but is redacted from public events. State schema version 2 is additive over v0.1 approval-boundary checkpoints; future incompatible graph changes still require an explicit migrator before deployment.

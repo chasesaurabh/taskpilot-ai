@@ -16,7 +16,7 @@ from structlog.contextvars import bind_contextvars, clear_contextvars
 from taskpilot.api.schemas import ApprovalRequestBody, CreateRunRequest, ModelProfilesResponse
 from taskpilot.application.runs import RunService
 from taskpilot.artifacts import ArtifactNotFoundError
-from taskpilot.auth import AuthenticationError, Principal, TokenAuthenticator
+from taskpilot.auth import AuthenticationError, Authenticator, Principal, TokenAuthenticator
 from taskpilot.domain.models import ApprovalAction, WorkflowPolicy
 from taskpilot.models.errors import ModelConfigurationError
 from taskpilot.persistence.runs import (
@@ -35,17 +35,21 @@ def create_app(
     service: RunService | None = None,
     *,
     lifespan: Lifespan | None = None,
-    authenticator: TokenAuthenticator | None = None,
+    authenticator: Authenticator | None = None,
+    approval_role: str | None = None,
+    admin_role: str = "admin",
 ) -> FastAPI:
     app = FastAPI(
         title="TaskPilot AI API",
-        version="0.1.0",
+        version="0.2.0",
         description="Lifecycle API for durable software-engineering workflows.",
         lifespan=lifespan,
     )
     if service is not None:
         app.state.run_service = service
     app.state.authenticator = authenticator or TokenAuthenticator()
+    app.state.approval_role = approval_role
+    app.state.admin_role = admin_role
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -111,6 +115,19 @@ def create_app(
     async def list_runs(request: Request) -> tuple[RunRecord, ...]:
         principal = _principal(request)
         return await _service(request).store.list_runs(owner_id=principal.principal_id)
+
+    @app.get("/admin/runs", response_model=list[RunRecord])
+    async def admin_runs(request: Request) -> tuple[RunRecord, ...]:
+        _require_role(_principal(request), request.app.state.admin_role)
+        return await _service(request).store.list_all_runs()
+
+    @app.get("/admin/runs/{run_id}/events", response_model=list[RunEvent])
+    async def admin_run_events(run_id: str, request: Request) -> tuple[RunEvent, ...]:
+        _require_role(_principal(request), request.app.state.admin_role)
+        try:
+            return await _service(request).store.list_events(run_id)
+        except RunNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.get("/runs/{run_id}", response_model=RunRecord)
     async def get_run(run_id: str, request: Request) -> RunRecord:
@@ -186,7 +203,7 @@ def _service(request: Request) -> RunService:
 
 
 def _principal(request: Request) -> Principal:
-    authenticator: TokenAuthenticator = request.app.state.authenticator
+    authenticator: Authenticator = request.app.state.authenticator
     try:
         return authenticator.authenticate(request.headers.get("Authorization"))
     except AuthenticationError as exc:
@@ -197,6 +214,11 @@ def _principal(request: Request) -> Principal:
         ) from exc
 
 
+def _require_role(principal: Principal, role: str | None) -> None:
+    if role is not None and not principal.has_role(role):
+        raise HTTPException(status_code=403, detail=f"Role '{role}' is required")
+
+
 async def _resume(
     request: Request,
     run_id: str,
@@ -205,10 +227,25 @@ async def _resume(
 ) -> RunRecord:
     try:
         principal = _principal(request)
+        _require_role(principal, request.app.state.approval_role)
         actor = principal.principal_id if principal.authenticated else body.actor
         if actor is None:
             raise HTTPException(status_code=422, detail="actor is required without authentication")
-        return await _service(request).resume(
+        service = _service(request)
+        waiting = await service.get_owned_run(run_id, owner_id=principal.principal_id)
+        approval_request = waiting.approval.get("request", {}) if waiting.approval else {}
+        approval_id = str(approval_request.get("approval_id", "approval"))
+        await service.store.append_event(
+            run_id,
+            "audit.approval_authorized",
+            data={
+                "principal_id": principal.principal_id,
+                "roles": principal.roles,
+                "action": action,
+            },
+            idempotency_key=f"audit.approval:{approval_id}",
+        )
+        return await service.resume(
             run_id,
             action=action,
             actor=actor,

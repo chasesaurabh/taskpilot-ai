@@ -22,7 +22,7 @@ COPY config.example.yaml ./config.example.yaml
 RUN python -m venv .venv && \
     pip install --no-cache-dir uv==0.12.7 && \
     uv sync --frozen --no-dev --extra postgres --extra demo --extra openai \
-        --extra anthropic --extra artifacts --no-editable && \
+        --extra anthropic --extra artifacts --extra auth --no-editable && \
     mkdir -p .taskpilot && chown -R taskpilot:taskpilot /opt/taskpilot
 
 USER taskpilot

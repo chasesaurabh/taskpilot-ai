@@ -23,6 +23,12 @@ class RunStore(Protocol):
 
     async def list_runs(self, *, owner_id: str, limit: int = 100) -> tuple[RunRecord, ...]: ...
 
+    async def list_all_runs(self, *, limit: int = 100) -> tuple[RunRecord, ...]: ...
+
+    async def claim_next(self, *, worker_id: str, lease_seconds: float) -> RunRecord | None: ...
+
+    async def renew_lease(self, run_id: str, *, worker_id: str, lease_seconds: float) -> bool: ...
+
     async def transition(
         self,
         run_id: str,
@@ -31,6 +37,7 @@ class RunStore(Protocol):
         target: RunStatus,
         approval: dict[str, Any] | None = None,
         final_report: FinalReport | None = None,
+        lease_owner: str | None = None,
     ) -> RunRecord: ...
 
     async def append_event(

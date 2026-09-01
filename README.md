@@ -13,6 +13,9 @@ TaskPilot turns a repository-scoped engineering request into a visible, human-go
 workflow. **LangGraph owns orchestration and durability. LangChain owns provider-neutral prompts and
 structured model calls. TaskPilot owns policy and constrained side effects.**
 
+The source tree is currently on the v0.2.0 release-candidate line. The commands below continue to
+name v0.1.0 because it is the latest published package and image until the v0.2.0 release gate closes.
+
 ## Quick start
 
 The Docker Compose demo is the fastest end-to-end path. It builds the API and web UI, starts
@@ -334,12 +337,18 @@ TaskPilot AI is a developer tool, not a secure sandbox for hostile repositories.
 - [Streaming strategy](docs/adr/006-streaming-strategy.md)
 - [Write-precondition ownership](docs/adr/007-write-precondition-ownership.md)
 - [Model profiles and provider options](docs/adr/008-model-profiles-and-provider-options.md)
+- [Multi-stage approvals](docs/adr/009-multi-stage-approvals.md)
+- [Owner authentication](docs/adr/010-owner-authentication.md)
+- [Artifact boundary](docs/adr/011-artifact-boundary.md)
+- [Container command execution](docs/adr/012-container-command-execution.md)
 - [Demo capture guide](docs/demo.md)
 - [Security policy](SECURITY.md)
-- [v0.1.0 security review](docs/security-review.md)
+- [v0.2.0 security review](docs/security-review.md)
 - [Dependency review](docs/dependency-review.md)
 - [v0.1.0 release notes](docs/releases/v0.1.0.md)
 - [v0.1.0 release-readiness evidence](docs/release-readiness.md)
+- [v0.2.0 release notes draft](docs/releases/v0.2.0.md)
+- [v0.2.0 release-readiness evidence](docs/release-readiness-v0.2.0.md)
 - [PyPI Trusted Publishing and GHCR release process](docs/publishing.md)
 - [Changelog](CHANGELOG.md)
 
@@ -383,12 +392,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for workflow and commit conventions. Focu
 ## Limitations
 
 - Demo mode intentionally supports the bundled product-pagination task; use a configured model provider for arbitrary tasks.
-- Opaque bearer tokens are intentionally small-scope authentication; enterprise OIDC/SSO and token
-  rotation remain deployment integrations.
-- Graph orchestration remains in the API process; the container backend isolates validation command
-  execution, not model calls or the control plane itself.
+- Opaque bearer tokens are intended for compact self-hosted deployments; use OIDC and managed role
+  assignment for production identity.
+- Graph workers can be separated from API replicas, but every worker still needs consistent shared
+  repository, checkpoint, artifact, and operation storage.
 - Host execution remains the local default and should only be used with trusted repositories.
-- Side effects are not generally exactly-once across a crash inside a write or command operation.
+- A command interrupted after its durable `started` marker fails closed and needs operator resolution.
 - Provider behavior and structured-output quality vary; capability checks and fallbacks cannot eliminate that variance.
 
 ## Roadmap
@@ -399,6 +408,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for workflow and commit conventions. Focu
 - [x] Authenticated multi-user run isolation and container-isolated command execution
 - [x] Object-store artifacts for long-lived full patches and validation logs
 - [x] Additional approval gates and model-backed evaluation datasets
+- [x] Transactional effects, leased graph workers, OIDC roles, and relevance-ranked context
 
 ## License
 

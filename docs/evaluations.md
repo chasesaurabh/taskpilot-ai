@@ -1,6 +1,7 @@
 # Repeatable evaluation scenarios
 
-TaskPilot's evaluation suite uses deterministic models and temporary repositories. It does not require credentials or make network calls.
+TaskPilot's deterministic evaluation suite uses temporary repositories. It does not require
+credentials or make network calls.
 
 Run all five required scenarios:
 
@@ -51,9 +52,10 @@ approval interrupt, closes the entire application lifespan, opens a new applicat
 SQLite run and checkpoint databases, approves the original run ID, and completes it. It asserts one
 `run.started`, one `run.resumed`, and no repository write before approval.
 
-SQLite is the one-process local adapter. PostgreSQL provides the same logical checkpoint and run/event
-contracts and safer database concurrency, but live SSE notifications remain process-local in v0.1.0.
-Neither mode claims exactly-once side effects for a crash inside a write/command node.
+SQLite is the local adapter. PostgreSQL provides the same logical checkpoint and run/event contracts,
+database-backed worker leases, skip-locked claims, and cross-process SSE refresh. Repository writes
+use persisted operation identities and batch rollback; completed operations replay safely. A command
+left in the uncertain state is not repeated automatically and requires operator resolution.
 
 ## Live-provider evaluation
 
@@ -66,5 +68,10 @@ and graph using the configured LangChain provider; they are always skipped in or
 the server's selected model profile, persistence, approvals, repository tools, and artifact path.
 Cases can assert an outcome, changed-file subset, required graph-path subsequence, and minimum/maximum
 repair count. The bundled `evaluations/datasets/demo-pagination.yaml` documents the schema and runs
-against deterministic demo mode; private datasets can select live profiles without committing
-credentials or provider-specific request data.
+against deterministic demo mode. By default each case operates on an isolated copy, so the referenced
+fixture is never modified. Private datasets can select live profiles without committing credentials
+or provider-specific request data.
+
+Release integration checks also exercise SQLite schema upgrades, an actual S3-compatible service,
+and a real container runtime. The paid multi-file Scenario B remains an explicit manual gate because
+it needs operator-supplied provider credentials and policy.

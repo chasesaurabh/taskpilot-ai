@@ -253,7 +253,14 @@ def test_bearer_auth_isolates_runs_and_owns_approval_actor(tmp_path: Path) -> No
         )
         app = create_app(
             service,
-            authenticator=TokenAuthenticator({"alice": "alice-secret", "bob": "bob-secret"}),
+            authenticator=TokenAuthenticator(
+                {
+                    "alice": ("alice-secret", ("approver",)),
+                    "bob": "bob-secret",
+                    "root": ("root-secret", ("admin",)),
+                }
+            ),
+            approval_role="approver",
         )
         try:
             async with AsyncClient(
@@ -281,6 +288,14 @@ def test_bearer_auth_isolates_runs_and_owns_approval_actor(tmp_path: Path) -> No
                 assert [record["run_id"] for record in alice_runs.json()] == [run_id]
                 bob_runs = await client.get("/runs", headers={"Authorization": "Bearer bob-secret"})
                 assert bob_runs.json() == []
+                forbidden_admin = await client.get(
+                    "/admin/runs", headers={"Authorization": "Bearer bob-secret"}
+                )
+                assert forbidden_admin.status_code == 403
+                admin_runs = await client.get(
+                    "/admin/runs", headers={"Authorization": "Bearer root-secret"}
+                )
+                assert [record["run_id"] for record in admin_runs.json()] == [run_id]
 
                 hidden = await client.get(
                     f"/runs/{run_id}", headers={"Authorization": "Bearer bob-secret"}
@@ -309,6 +324,53 @@ def test_bearer_auth_isolates_runs_and_owns_approval_actor(tmp_path: Path) -> No
                 decided = next(event for event in events if event.event_type == "approval.decided")
                 assert decided.data["actor"] == "alice"
         finally:
+            await service.wait_for_background_tasks()
+            await store.close()
+
+    asyncio.run(scenario())
+
+
+def test_leased_worker_claims_queued_start_and_resume(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        repository = tmp_path / "repo"
+        repository.mkdir()
+        store = await SqliteRunStore.open(tmp_path / "runs.sqlite")
+        service = RunService(
+            graph=build_workflow(_api_nodes(), checkpointer=InMemorySaver()),
+            store=store,
+            repository_policy=RepositoryToolPolicy(allowed_roots=(tmp_path,)),
+            deferred_execution=True,
+            worker_id="test-worker",
+            lease_seconds=30,
+            worker_poll_seconds=0.01,
+        )
+        service.start_worker()
+        app = create_app(service)
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                created = await client.post(
+                    "/runs", json={"repository": str(repository), "task": "Queued change"}
+                )
+                assert created.status_code == 202
+                await _wait_for_status(store, created.json()["run_id"], RunStatus.WAITING)
+
+                approved = await client.post(
+                    f"/runs/{created.json()['run_id']}/approve",
+                    json={"actor": "worker-reviewer"},
+                )
+                assert approved.status_code == 202
+                await _wait_for_status(store, created.json()["run_id"], RunStatus.COMPLETED)
+
+                completed = await store.get_run(created.json()["run_id"])
+                assert completed.execution_attempts == 2
+                assert completed.lease_owner is None
+                events = await store.list_events(completed.run_id)
+                assert [event.event_type for event in events].count("run.started") == 1
+                assert [event.event_type for event in events].count("run.resumed") == 1
+        finally:
+            await service.stop_worker()
             await service.wait_for_background_tasks()
             await store.close()
 

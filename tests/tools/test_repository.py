@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -12,11 +13,12 @@ from taskpilot.tools.errors import (
     CommandDeniedError,
     FileConflictError,
     FileLimitError,
+    OperationUncertainError,
     RepositoryBoundaryError,
     RepositoryToolError,
 )
 from taskpilot.tools.repository import RepositoryWorkspace
-from taskpilot.tools.types import RepositoryToolPolicy
+from taskpilot.tools.types import RepositoryToolPolicy, WriteRequest
 
 
 def _policy(root: Path, **overrides: object) -> RepositoryToolPolicy:
@@ -51,6 +53,23 @@ def test_read_list_and_search_are_bounded(tmp_path: Path) -> None:
     ]
     with pytest.raises(FileLimitError):
         workspace.read_file("large.txt")
+
+
+def test_relevance_selection_prefers_task_terms_over_alphabetical_order(tmp_path: Path) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    (repository / "aaa.py").write_text("def unrelated(): pass\n", encoding="utf-8")
+    (repository / "orders.py").write_text(
+        "def paginate_customer_orders(): pass\n", encoding="utf-8"
+    )
+    (repository / "zzz.py").write_text("def other(): pass\n", encoding="utf-8")
+    workspace = RepositoryWorkspace(repository, _policy(tmp_path))
+
+    selected = workspace.select_files(
+        "Add pagination to customer orders", max_files=1, max_bytes=10_000
+    )
+
+    assert [entry.path for entry in selected] == ["orders.py"]
 
 
 def test_paths_cannot_escape_repository(tmp_path: Path) -> None:
@@ -257,3 +276,98 @@ def test_container_backend_builds_a_networkless_least_privilege_worker(tmp_path:
     assert "no-new-privileges" in arguments
     assert f"type=bind,source={repository.resolve()},target=/workspace" in arguments
     assert arguments[-3:] == ("python:3.12-slim", "pytest", "-q")
+
+
+def test_multi_file_write_rolls_back_if_commit_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    first = repository / "first.txt"
+    second = repository / "second.txt"
+    first.write_text("before-first", encoding="utf-8")
+    second.write_text("before-second", encoding="utf-8")
+    workspace = RepositoryWorkspace(repository, _policy(tmp_path, allow_writes=True))
+    real_replace = os.replace
+    calls = 0
+
+    def fail_second_commit(source: str | Path, target: str | Path) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("simulated commit failure")
+        real_replace(source, target)
+
+    monkeypatch.setattr(os, "replace", fail_second_commit)
+
+    with pytest.raises(OSError, match="simulated"):
+        workspace.write_files(
+            (
+                WriteRequest(
+                    path="first.txt",
+                    content="after-first",
+                    expected_sha256=hashlib.sha256(b"before-first").hexdigest(),
+                ),
+                WriteRequest(
+                    path="second.txt",
+                    content="after-second",
+                    expected_sha256=hashlib.sha256(b"before-second").hexdigest(),
+                ),
+            )
+        )
+
+    assert first.read_text(encoding="utf-8") == "before-first"
+    assert second.read_text(encoding="utf-8") == "before-second"
+
+
+def test_write_operation_replays_completed_result_without_rewriting(tmp_path: Path) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    target = repository / "value.txt"
+    target.write_text("before", encoding="utf-8")
+    workspace = RepositoryWorkspace(
+        repository,
+        _policy(tmp_path, allow_writes=True, operation_root=tmp_path / "operations"),
+    )
+    request = WriteRequest(
+        path="value.txt",
+        content="after",
+        expected_sha256=hashlib.sha256(b"before").hexdigest(),
+    )
+
+    first = workspace.write_files((request,), operation_id="run:write:0")
+    second = workspace.write_files((request,), operation_id="run:write:0")
+
+    assert second == first
+    assert target.read_text(encoding="utf-8") == "after"
+
+    with pytest.raises(RepositoryToolError, match="different write content"):
+        workspace.write_files(
+            (
+                WriteRequest(
+                    path="value.txt",
+                    content="unexpected",
+                    expected_sha256=first[0].sha256,
+                ),
+            ),
+            operation_id="run:write:0",
+        )
+
+
+def test_uncertain_command_is_not_repeated(tmp_path: Path) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    workspace = RepositoryWorkspace(
+        repository,
+        _policy(
+            tmp_path,
+            allow_commands=True,
+            allowed_commands=(("missing-taskpilot-command",),),
+            operation_root=tmp_path / "operations",
+        ),
+    )
+
+    with pytest.raises(RepositoryToolError, match="Executable was not found"):
+        workspace.execute_once(("missing-taskpilot-command",), operation_id="run:command:0")
+    with pytest.raises(OperationUncertainError, match="may have completed"):
+        workspace.execute_once(("missing-taskpilot-command",), operation_id="run:command:0")

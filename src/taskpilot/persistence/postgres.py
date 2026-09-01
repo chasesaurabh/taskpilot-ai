@@ -53,6 +53,9 @@ class PostgresRunStore:
                 status TEXT NOT NULL,
                 approval_json JSONB,
                 final_report_json JSONB,
+                lease_owner TEXT,
+                lease_expires_at TIMESTAMPTZ,
+                execution_attempts INTEGER NOT NULL DEFAULT 0,
                 created_at TIMESTAMPTZ NOT NULL,
                 updated_at TIMESTAMPTZ NOT NULL
             )
@@ -60,6 +63,14 @@ class PostgresRunStore:
         )
         await self._connection.execute(
             "ALTER TABLE runs ADD COLUMN IF NOT EXISTS owner_id TEXT NOT NULL DEFAULT 'local'"
+        )
+        await self._connection.execute("ALTER TABLE runs ADD COLUMN IF NOT EXISTS lease_owner TEXT")
+        await self._connection.execute(
+            "ALTER TABLE runs ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ"
+        )
+        await self._connection.execute(
+            "ALTER TABLE runs ADD COLUMN IF NOT EXISTS execution_attempts "
+            "INTEGER NOT NULL DEFAULT 0"
         )
         await self._connection.execute(
             """
@@ -125,6 +136,12 @@ class PostgresRunStore:
         )
         return tuple(_run_from_row(row) for row in await cursor.fetchall())
 
+    async def list_all_runs(self, *, limit: int = 100) -> tuple[RunRecord, ...]:
+        cursor = await self._connection.execute(
+            "SELECT * FROM runs ORDER BY created_at DESC LIMIT %s", (limit,)
+        )
+        return tuple(_run_from_row(row) for row in await cursor.fetchall())
+
     async def transition(
         self,
         run_id: str,
@@ -133,20 +150,27 @@ class PostgresRunStore:
         target: RunStatus,
         approval: dict[str, Any] | None = None,
         final_report: FinalReport | None = None,
+        lease_owner: str | None = None,
     ) -> RunRecord:
         assignments = ["status = %s", "updated_at = %s"]
         parameters: list[Any] = [target.value, datetime.now(UTC)]
+        if target != RunStatus.RUNNING:
+            assignments.extend(("lease_owner = NULL", "lease_expires_at = NULL"))
         if approval is not None:
             assignments.append("approval_json = %s::jsonb")
             parameters.append(json.dumps(approval))
         if final_report is not None:
             assignments.append("final_report_json = %s::jsonb")
             parameters.append(final_report.model_dump_json())
+        lease_condition = ""
         parameters.extend((run_id, [status.value for status in expected]))
+        if lease_owner is not None:
+            lease_condition = " AND lease_owner = %s"
+            parameters.append(lease_owner)
         async with self._write_lock:
             cursor = await self._connection.execute(
                 f"UPDATE runs SET {', '.join(assignments)} "
-                "WHERE run_id = %s AND status = ANY(%s) RETURNING run_id",
+                f"WHERE run_id = %s AND status = ANY(%s){lease_condition} RETURNING run_id",
                 parameters,
             )
             changed = await cursor.fetchone()
@@ -158,6 +182,61 @@ class PostgresRunStore:
                 f"Run '{run_id}' is '{current.status}', expected one of {expected_values}"
             )
         return await self.get_run(run_id)
+
+    async def claim_next(self, *, worker_id: str, lease_seconds: float) -> RunRecord | None:
+        async with self._write_lock, self._connection.transaction():
+            cursor = await self._connection.execute(
+                """
+                WITH candidate AS (
+                    SELECT run_id, status
+                    FROM runs
+                    WHERE status = %s OR (
+                        status = %s
+                        AND (lease_expires_at IS NULL OR lease_expires_at < NOW())
+                    )
+                    ORDER BY created_at
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT 1
+                )
+                UPDATE runs AS target
+                SET status = %s,
+                    lease_owner = %s,
+                    lease_expires_at = NOW() + (%s * INTERVAL '1 second'),
+                    execution_attempts = target.execution_attempts + 1,
+                    updated_at = NOW()
+                FROM candidate
+                WHERE target.run_id = candidate.run_id
+                RETURNING target.*, candidate.status AS previous_status
+                """,
+                (
+                    RunStatus.QUEUED,
+                    RunStatus.RUNNING,
+                    RunStatus.RUNNING,
+                    worker_id,
+                    lease_seconds,
+                ),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        record = _run_from_row(row)
+        return record.model_copy(
+            update={"lease_recovered": row["previous_status"] == RunStatus.RUNNING}
+        )
+
+    async def renew_lease(self, run_id: str, *, worker_id: str, lease_seconds: float) -> bool:
+        cursor = await self._connection.execute(
+            """
+            UPDATE runs
+            SET lease_expires_at = NOW() + (%s * INTERVAL '1 second'), updated_at = NOW()
+            WHERE run_id = %s AND status = %s AND lease_owner = %s
+            RETURNING run_id
+            """,
+            (lease_seconds, run_id, RunStatus.RUNNING, worker_id),
+        )
+        changed = await cursor.fetchone()
+        await self._connection.commit()
+        return changed is not None
 
     async def append_event(
         self,
@@ -221,9 +300,12 @@ class PostgresRunStore:
 
     async def wait_for_change(self, observed_revision: int, *, timeout: float = 15) -> int:
         async with self._condition:
+            if self._revision != observed_revision:
+                return self._revision
+            with suppress(TimeoutError):
+                await asyncio.wait_for(self._condition.wait(), timeout=min(timeout, 1.0))
             if self._revision == observed_revision:
-                with suppress(TimeoutError):
-                    await asyncio.wait_for(self._condition.wait(), timeout=timeout)
+                return observed_revision
             return self._revision
 
     @property
@@ -249,6 +331,9 @@ def _run_from_row(row: dict[str, Any]) -> RunRecord:
             if row["final_report_json"]
             else None
         ),
+        lease_owner=row.get("lease_owner"),
+        lease_expires_at=row.get("lease_expires_at"),
+        execution_attempts=row.get("execution_attempts", 0),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

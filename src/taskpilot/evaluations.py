@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shutil
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -27,6 +29,7 @@ class EvaluationCase(EvaluationModel):
     repository: str = Field(min_length=1)
     task: str = Field(min_length=1)
     model_profile: str | None = None
+    copy_repository: bool = True
     expectation: EvaluationExpectation = EvaluationExpectation()
 
 
@@ -73,6 +76,21 @@ def _run_case(
     repository = Path(case.repository)
     if not repository.is_absolute():
         repository = (dataset_directory / repository).resolve()
+    if case.copy_repository:
+        with tempfile.TemporaryDirectory(prefix="taskpilot-evaluation-") as temporary:
+            isolated = Path(temporary) / repository.name
+            shutil.copytree(repository, isolated)
+            return _execute_case(case, client=client, repository=isolated, actor=actor)
+    return _execute_case(case, client=client, repository=repository, actor=actor)
+
+
+def _execute_case(
+    case: EvaluationCase,
+    *,
+    client: TaskPilotClient,
+    repository: Path,
+    actor: str,
+) -> EvaluationResult:
     created = client.create_run(
         repository=str(repository),
         task=case.task,
