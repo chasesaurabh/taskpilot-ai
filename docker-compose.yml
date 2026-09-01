@@ -17,6 +17,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      network: ${TASKPILOT_BUILD_NETWORK:-default}
     environment:
       TASKPILOT_ENVIRONMENT: docker
       TASKPILOT_HOST: 0.0.0.0
@@ -40,6 +41,7 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      network: ${TASKPILOT_BUILD_NETWORK:-default}
     depends_on:
       - api
     ports:
