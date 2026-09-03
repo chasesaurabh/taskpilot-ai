@@ -12,8 +12,8 @@ semantic-versioned container tags, and records GitHub artifact attestations for 
 
 ## Current publication
 
-Release `v0.1.0` is published on [PyPI](https://pypi.org/project/taskpilot-ai/0.1.0/) and GHCR. Its
-[publishing run](https://github.com/chasesaurabh/taskpilot-ai/actions/runs/33351719786) completed all
+Release `v0.2.0` is published on [PyPI](https://pypi.org/project/taskpilot-ai/0.2.0/) and GHCR. Its
+[publishing run](https://github.com/chasesaurabh/taskpilot-ai/actions/runs/33702764842) completed all
 package, image, and attestation jobs successfully. The PyPI publisher is active for `release.yml`
 and the `pypi` GitHub environment.
 
@@ -63,17 +63,17 @@ Pre-releases receive version tags but do not move `latest`.
 
 ## Verify published artifacts
 
-Replace `0.1.0` below with the released version:
+Use the current released version:
 
 ```bash
-python -m pip install "taskpilot-ai==0.1.0"
-docker pull ghcr.io/chasesaurabh/taskpilot-ai:0.1.0
-docker pull ghcr.io/chasesaurabh/taskpilot-ai-web:0.1.0
+python -m pip install "taskpilot-ai==0.2.0"
+docker pull ghcr.io/chasesaurabh/taskpilot-ai:0.2.0
+docker pull ghcr.io/chasesaurabh/taskpilot-ai-web:0.2.0
 gh attestation verify \
-  oci://ghcr.io/chasesaurabh/taskpilot-ai:0.1.0 \
+  oci://ghcr.io/chasesaurabh/taskpilot-ai:0.2.0 \
   --repo chasesaurabh/taskpilot-ai
 gh attestation verify \
-  oci://ghcr.io/chasesaurabh/taskpilot-ai-web:0.1.0 \
+  oci://ghcr.io/chasesaurabh/taskpilot-ai-web:0.2.0 \
   --repo chasesaurabh/taskpilot-ai
 ```
 

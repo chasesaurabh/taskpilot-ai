@@ -13,9 +13,7 @@ TaskPilot turns a repository-scoped engineering request into a visible, human-go
 workflow. **LangGraph owns orchestration and durability. LangChain owns provider-neutral prompts and
 structured model calls. TaskPilot owns policy and constrained side effects.**
 
-The source tree is currently on the v0.2.0 release-candidate line and its release validation is
-complete. The commands below continue to name v0.1.0 because it remains the latest published package
-and image until v0.2.0 is published.
+The source tree and latest published package and images are v0.2.0.
 
 ## Quick start
 
@@ -33,20 +31,20 @@ key is required for this deterministic portfolio path.
 Install the published Python package for the CLI and API entry points:
 
 ```bash
-python -m pip install "taskpilot-ai==0.1.0"
+python -m pip install "taskpilot-ai==0.2.0"
 taskpilot --help
 ```
 
 The release also provides public, provenance-attested API and web images:
 
 ```bash
-docker pull ghcr.io/chasesaurabh/taskpilot-ai:0.1.0
-docker pull ghcr.io/chasesaurabh/taskpilot-ai-web:0.1.0
+docker pull ghcr.io/chasesaurabh/taskpilot-ai:0.2.0
+docker pull ghcr.io/chasesaurabh/taskpilot-ai-web:0.2.0
 ```
 
 The images are versioned components of the Compose deployment; use the environment, persistence,
 policy, and repository mounts shown in `docker-compose.yml` when deploying them. See the
-[v0.1.0 release](https://github.com/chasesaurabh/taskpilot-ai/releases/tag/v0.1.0) and
+[v0.2.0 release](https://github.com/chasesaurabh/taskpilot-ai/releases/tag/v0.2.0) and
 [publishing guide](docs/publishing.md) for artifacts, tags, and attestation verification.
 
 ## Use TaskPilot on your repository

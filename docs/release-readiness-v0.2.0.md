@@ -2,11 +2,15 @@
 
 ## Decision
 
-**Ready for release.** The code, migrations, deterministic scenario, provider-backed multi-file
+**Released on 2026-09-02.** The code, migrations, deterministic scenario, provider-backed multi-file
 scenario, S3-compatible boundary, container boundary, production images, and static security
 analysis have passed locally and in hosted CI. Scenario B ran with private, ignored configuration;
 the repository retains only this sanitized outcome and no provider-specific configuration or raw
 request data.
+
+The [GitHub release](https://github.com/chasesaurabh/taskpilot-ai/releases/tag/v0.2.0) triggered the
+[successful publishing workflow](https://github.com/chasesaurabh/taskpilot-ai/actions/runs/33702764842),
+which published the Python distributions and provenance-attested API and web images.
 
 ## Gate record
 
