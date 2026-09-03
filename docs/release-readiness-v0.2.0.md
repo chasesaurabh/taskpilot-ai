@@ -2,11 +2,11 @@
 
 ## Decision
 
-**Release candidate, pending the paid live-provider Scenario B.** The code, migrations,
-deterministic scenario, S3-compatible boundary, container boundary, production images, and static
-security analysis have passed locally and in hosted CI. No provider credential or private live policy
-was present during this review, so the paid multi-file scenario was not run and the release must not
-be tagged or published yet.
+**Ready for release.** The code, migrations, deterministic scenario, provider-backed multi-file
+scenario, S3-compatible boundary, container boundary, production images, and static security
+analysis have passed locally and in hosted CI. Scenario B ran with private, ignored configuration;
+the repository retains only this sanitized outcome and no provider-specific configuration or raw
+request data.
 
 ## Gate record
 
@@ -22,7 +22,7 @@ be tagged or published yet.
 | Bundled dataset | Pass | `taskpilot evaluate evaluations/datasets/demo-pagination.yaml` completed `add-pagination` |
 | Python artifacts/dependency audit | Pass | Wheel and sdist built as 0.2.0; pip-audit found no known dependency vulnerabilities |
 | Compose image build | Pass | API and web production images built locally, including the OIDC extra |
-| Paid live Scenario B | **Blocked external gate** | No live provider credentials or private live policy were available |
+| Live Scenario B | Pass | Provider-backed run completed approval, multi-file writes, command execution, and validation on 2026-09-02 |
 | Hosted PostgreSQL/CI matrix | Pass | [CI run 33500751038](https://github.com/chasesaurabh/taskpilot-ai/actions/runs/33500751038) passed backend, frontend, audits, services, and image builds |
 | CodeQL | Pass | [CodeQL run 33500751410](https://github.com/chasesaurabh/taskpilot-ai/actions/runs/33500751410) passed Python and JavaScript/TypeScript analysis |
 
@@ -43,9 +43,7 @@ only when their explicit test environment variables are present.
 
 ## Before publishing
 
-1. Run Scenario B with an approved paid provider, sanitize and retain its trace, and record provider,
-   model, token usage, repair count, duration, and outcome.
-2. Require green hosted CI, including PostgreSQL, MinIO, container execution, audits, CodeQL, and
+1. Require green hosted CI, including PostgreSQL, MinIO, container execution, audits, CodeQL, and
    container builds.
-3. Confirm the working tree contains only the intended release commit, then publish the matching
+2. Confirm the working tree contains only the intended release commit, then publish the matching
    GitHub release so trusted publishing builds the package and provenance-attested images.

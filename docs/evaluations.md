@@ -73,5 +73,5 @@ fixture is never modified. Private datasets can select live profiles without com
 or provider-specific request data.
 
 Release integration checks also exercise SQLite schema upgrades, an actual S3-compatible service,
-and a real container runtime. The paid multi-file Scenario B remains an explicit manual gate because
-it needs operator-supplied provider credentials and policy.
+and a real container runtime. The provider-backed multi-file Scenario B remains an explicit manual
+gate because it needs operator-supplied private policy and cannot run in ordinary CI.

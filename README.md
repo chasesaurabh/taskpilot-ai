@@ -13,8 +13,9 @@ TaskPilot turns a repository-scoped engineering request into a visible, human-go
 workflow. **LangGraph owns orchestration and durability. LangChain owns provider-neutral prompts and
 structured model calls. TaskPilot owns policy and constrained side effects.**
 
-The source tree is currently on the v0.2.0 release-candidate line. The commands below continue to
-name v0.1.0 because it is the latest published package and image until the v0.2.0 release gate closes.
+The source tree is currently on the v0.2.0 release-candidate line and its release validation is
+complete. The commands below continue to name v0.1.0 because it remains the latest published package
+and image until v0.2.0 is published.
 
 ## Quick start
 
