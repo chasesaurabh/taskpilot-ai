@@ -18,8 +18,8 @@ and its hashes. The application validates that operations agree with that snapsh
 captured hash to the repository capability when it applies each change.
 
 Proposals are bounded to 25 files and duplicate paths are rejected before the first write. A file
-outside the bounded proposal context cannot be replaced; it must first be made visible through a
-future context-selection improvement.
+outside the bounded, relevance-ranked proposal context cannot be replaced; it must first be selected
+into a refreshed context snapshot.
 
 ## Alternatives considered
 
@@ -32,6 +32,6 @@ future context-selection improvement.
 ## Consequences
 
 Hosted and local providers use the same proposal schema as the deterministic demo. Concurrent edits
-between context capture and write are rejected. Multi-file application is not transactional: an
-error on a later file can still leave earlier validated writes applied, so review and disposable
-worktrees remain important for consequential changes.
+between context capture and write are rejected. Multi-file application preflights the whole batch,
+stages replacements and rollback copies, and records a deterministic operation identity. A host
+failure during rollback can still require inspection of the repository and operation journal.

@@ -14,5 +14,5 @@ Downloads pass through the run-owner authorization boundary.
 ## Consequences
 
 Operators own encryption and lifecycle policy for sensitive source evidence. Artifact failure is a
-visible workflow failure rather than silent evidence loss. The adapter is synchronous because graph
-nodes are synchronous today; a separate worker boundary can absorb object-store latency later.
+visible workflow failure rather than silent evidence loss. The synchronous adapter keeps artifact
+creation ordered with graph-node completion, including when graph nodes run in leased workers.

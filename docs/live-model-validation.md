@@ -82,13 +82,5 @@ PowerShell uses `$env:NAME="value"`. Set `TASKPILOT_LIVE_SCENARIO=a` or `b` to r
 
 Each successful test prints a `TASKPILOT_LIVE_RESULT` JSON record containing the selected models,
 graph path, approval, repository tools, changed files, validation result, repair count, token usage
-when reported by the provider, and total duration. Preserve that output with the release evidence;
-do not commit credentials or raw provider requests.
-
-## Validation status for v0.1.0 preparation
-
-The harness is implemented and ordinary CI verifies that it remains collected but skipped. Scenario
-A completed successfully on 2026-08-30 using a private OpenAI-compatible endpoint. The sanitized
-[release trace](evidence/v0.1.0-scenario-a.json) records the approval boundary, implementation,
-real validation, one bounded repair, review, and final report without provider-specific identifiers
-or raw requests. Scenario B remains strongly recommended but is not a `v0.1.0` release gate.
+when reported by the provider, and total duration. Preserve that output outside the repository when
+it is needed for release review; do not commit credentials, provider identifiers, or raw requests.

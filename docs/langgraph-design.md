@@ -9,22 +9,22 @@ Software delivery has policy-visible phases, a parallel review join, a human pau
 feedback routes. A free-running agent loop would hide these decisions inside prompts. TaskPilot uses
 LangGraph for durable control flow and LangChain for provider-neutral model calls.
 
-| Capability | Where | Why it is used |
-| --- | --- | --- |
-| `StateGraph` | `src/taskpilot/graph/builder.py` | Makes delivery stages and allowed transitions inspectable. |
-| Typed state | `src/taskpilot/graph/state.py` | Gives every node a shared, versioned contract. |
-| Partial updates | every function in `src/taskpilot/nodes/engineering.py` | Nodes return only the state they own instead of mutating a shared object. |
-| Reducers | `model_decisions` and `node_history` in `graph/state.py` | Safely combine append-only updates, including one parallel superstep. |
-| Conditional edges | `src/taskpilot/graph/routing.py` | Approval, validation, and review outcomes route deterministically. |
-| Parallel execution | planning fan-out in `graph/builder.py` | Architecture and repository impact are independent reviews of one approved plan candidate. |
-| Graph join | the two-source edge into `approval` | Approval is not offered until both parallel findings exist. |
-| Loop | validation/review → diagnosis or repair → validation | Failed evidence returns to implementation without restarting planning. |
-| Bounded retries | `repair_attempts` plus `WorkflowPolicy` | Prevents an unbounded probabilistic repair loop. |
-| `interrupt()` | `EngineeringNodes.approval` | Persists an informed human checkpoint before repository writes or commands. |
-| `Command(resume=…)` | `RunService.resume` | Continues the same saved graph thread with an audited decision. |
-| Checkpoints and `thread_id` | `persistence/checkpoints.py`, `application/runs.py` | The run ID identifies the durable LangGraph execution across process restarts. |
-| Streaming | `RunService._drive` | `updates` expose state transitions and `tasks` expose start/failure timing without leaking raw framework events to clients. |
-| Failure handling | `RunService._drive`, graph routing | Provider/tool exceptions become terminal lifecycle events; validation failures use the repair graph. |
+| Capability                  | Where                                                    | Why it is used                                                                                                              |
+| --------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `StateGraph`                | `src/taskpilot/graph/builder.py`                         | Makes delivery stages and allowed transitions inspectable.                                                                  |
+| Typed state                 | `src/taskpilot/graph/state.py`                           | Gives every node a shared, versioned contract.                                                                              |
+| Partial updates             | every function in `src/taskpilot/nodes/engineering.py`   | Nodes return only the state they own instead of mutating a shared object.                                                   |
+| Reducers                    | `model_decisions` and `node_history` in `graph/state.py` | Safely combine append-only updates, including one parallel superstep.                                                       |
+| Conditional edges           | `src/taskpilot/graph/routing.py`                         | Approval, validation, and review outcomes route deterministically.                                                          |
+| Parallel execution          | planning fan-out in `graph/builder.py`                   | Architecture and repository impact are independent reviews of one approved plan candidate.                                  |
+| Graph join                  | the two-source edge into `approval`                      | Approval is not offered until both parallel findings exist.                                                                 |
+| Loop                        | validation/review → diagnosis or repair → validation     | Failed evidence returns to implementation without restarting planning.                                                      |
+| Bounded retries             | `repair_attempts` plus `WorkflowPolicy`                  | Prevents an unbounded probabilistic repair loop.                                                                            |
+| `interrupt()`               | plan, write, and command approval nodes                  | Persists informed checkpoints before each policy-enabled side effect.                                                       |
+| `Command(resume=…)`         | `RunService.resume`                                      | Continues the same saved graph thread with an audited decision.                                                             |
+| Checkpoints and `thread_id` | `persistence/checkpoints.py`, `application/runs.py`      | The run ID identifies the durable LangGraph execution across process restarts.                                              |
+| Streaming                   | `RunService._drive`                                      | `updates` expose state transitions and `tasks` expose start/failure timing without leaking raw framework events to clients. |
+| Failure handling            | `RunService._drive`, graph routing                       | Provider/tool exceptions become terminal lifecycle events; validation failures use the repair graph.                        |
 
 The parallel-execution test uses a two-party barrier, so it fails if the architecture and repository
 branches run sequentially. The packaged restart test closes the API lifespan at approval, opens a
@@ -48,7 +48,9 @@ Checkpoints are authoritative for graph position and state; the run/event store 
 and replay log. Compare-and-set status prevents duplicate approval from starting two resumes.
 Approval-boundary restart/resume is proven for the packaged runtime.
 
-This is not an exactly-once workflow engine. A crash inside a write-capable or command node can occur
-after a side effect but before the next checkpoint. Hash preconditions, atomic replacement, bounded
-commands, and event idempotency reduce risk, but hostile or horizontally scaled execution needs an
-external isolated durable worker design.
+Repository writes preflight the whole change set, stage replacements and rollback copies, and record
+a deterministic operation ID before commit. A completed operation replays its stored result. Command
+operations also persist their identity, but a crash after command start can leave completion
+uncertain; that state fails closed and requires operator review instead of automatic replay. Leased
+workers recover expired runs from checkpoints without allowing competing workers to advance the same
+run.

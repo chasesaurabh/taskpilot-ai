@@ -10,47 +10,12 @@ No long-lived PyPI or registry tokens are required. The workflow builds from the
 tag, checks that the Python and web versions match that tag, publishes the distributions, pushes
 semantic-versioned container tags, and records GitHub artifact attestations for both images.
 
-## Current publication
+The repository's `pypi` GitHub environment and PyPI Trusted Publisher must remain restricted to
+`release.yml`. Protect release tags and workflow changes as publishing credentials. The workflow
+grants `id-token: write` to the PyPI publishing and container provenance jobs. Container jobs use
+the repository-scoped `GITHUB_TOKEN` to push images and require no registry secret.
 
-Release `v0.2.0` is published on [PyPI](https://pypi.org/project/taskpilot-ai/0.2.0/) and GHCR. Its
-[publishing run](https://github.com/chasesaurabh/taskpilot-ai/actions/runs/33702764842) completed all
-package, image, and attestation jobs successfully. The PyPI publisher is active for `release.yml`
-and the `pypi` GitHub environment.
-
-## One-time configuration
-
-1. In the GitHub repository, create an environment named exactly `pypi` under **Settings →
-   Environments**. Add a required reviewer if releases should require a final approval.
-2. In PyPI, add a
-   [pending Trusted Publisher](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)
-   for the first release of `taskpilot-ai`. Use these exact values:
-
-   | PyPI field | Value |
-   | --- | --- |
-   | PyPI project name | `taskpilot-ai` |
-   | Owner | `chasesaurabh` |
-   | Repository name | `taskpilot-ai` |
-   | Workflow name | `release.yml` |
-   | Environment name | `pypi` |
-
-   If the PyPI project already exists, add the same publisher under the project's **Publishing**
-   settings instead.
-3. Protect release tags matching `v*` with a GitHub repository ruleset. PyPI treats the authorized
-   workflow as a credential, so tag creation and workflow changes should remain maintainer-only.
-
-The workflow grants `id-token: write` only to the PyPI publishing job. Its only steps download the
-already-built distributions and invoke PyPA's publishing action. The container jobs use the
-repository-scoped `GITHUB_TOKEN`, with `packages: write`, and do not require a registry secret.
-
-## v0.1.0 publication record
-
-The GitHub Release for `v0.1.0` predates the workflow, so publishing the workflow file cannot
-retroactively trigger its `release.published` event. It was published through the guarded manual
-path with `v0.1.0` as the input. That path checked out `refs/tags/v0.1.0` explicitly and performed
-the same version checks and publishing jobs as an automatic release. Both GHCR packages are public,
-and the GitHub Release text links to PyPI and the versioned images.
-
-## Publish future releases
+## Publish a release
 
 1. Update both `project.version` in `pyproject.toml` and `version` in
    `apps/web/package.json`.
@@ -63,17 +28,17 @@ Pre-releases receive version tags but do not move `latest`.
 
 ## Verify published artifacts
 
-Use the current released version:
+Replace `<version>` below with the release version, without a leading `v`:
 
 ```bash
-python -m pip install "taskpilot-ai==0.2.0"
-docker pull ghcr.io/chasesaurabh/taskpilot-ai:0.2.0
-docker pull ghcr.io/chasesaurabh/taskpilot-ai-web:0.2.0
+python -m pip install "taskpilot-ai==<version>"
+docker pull "ghcr.io/chasesaurabh/taskpilot-ai:<version>"
+docker pull "ghcr.io/chasesaurabh/taskpilot-ai-web:<version>"
 gh attestation verify \
-  oci://ghcr.io/chasesaurabh/taskpilot-ai:0.2.0 \
+  "oci://ghcr.io/chasesaurabh/taskpilot-ai:<version>" \
   --repo chasesaurabh/taskpilot-ai
 gh attestation verify \
-  oci://ghcr.io/chasesaurabh/taskpilot-ai-web:0.2.0 \
+  "oci://ghcr.io/chasesaurabh/taskpilot-ai-web:<version>" \
   --repo chasesaurabh/taskpilot-ai
 ```
 

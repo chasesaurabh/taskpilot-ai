@@ -74,8 +74,9 @@ are immediately reflected on the host.
 Validation commands execute inside the API container. The standard image includes Python and the
 dependencies used by the bundled sample. Repositories requiring Node.js, Java, Go, system packages,
 or project-specific services need a derived API image or a Compose override that installs that
-toolchain. An allowlisted test or build command still executes repository code; use only trusted
-repositories or add external container/VM isolation.
+toolchain. An allowlisted test or build command still executes repository code. Use only trusted
+repositories with this bind-mounted setup; see [deployment and isolation](deployment.md) for the
+container command backend and whole-service isolation guidance.
 
 ## Troubleshooting
 

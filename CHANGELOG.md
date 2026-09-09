@@ -66,7 +66,7 @@ All notable changes to TaskPilot AI are documented in this file. The project fol
 - Enforce canonical repository boundaries, reject traversal and symlink escapes, strip command
   environments, cap command time/output, and normalize provider errors without raw secret details.
 
-### Known limitations
+### Limitations at release
 
 - The runtime assumes one trusted developer and has no built-in authentication or multi-tenancy.
 - Allowed validation commands execute repository code on the host; hostile repositories require an

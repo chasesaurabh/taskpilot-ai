@@ -14,7 +14,8 @@ Use LangGraph `StateGraph` as the orchestration runtime. Keep routing functions 
 ## Alternatives considered
 
 - A hand-written workflow engine offers control but would recreate checkpoint, interrupt, and stream semantics.
-- A generic durable workflow platform such as Temporal is operationally strong but does not provide model-native graph state and would obscure the portfolio focus.
+- A generic durable workflow platform such as Temporal is operationally strong but does not provide
+  model-native graph state and would obscure the graph-centered product design.
 - A single LangChain agent loop is simpler but cannot make delivery policy and bounded recovery sufficiently explicit.
 
 ## Consequences

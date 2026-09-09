@@ -19,4 +19,6 @@ Normalize internal graph callbacks into a stable append-only event representatio
 
 ## Consequences
 
-Browsers and CLI clients get a simple reconnectable feed and the public schema can evolve independently. Each instance needs a cross-process notification mechanism when horizontally scaled; PostgreSQL notifications or a broker can provide it later without changing the API.
+Browsers and CLI clients get a simple reconnectable feed and the public schema can evolve
+independently. In multi-process deployments, bounded refresh from the durable event table makes
+events written by another worker visible without changing the API contract.

@@ -23,16 +23,16 @@ flowchart LR
 
 ## Component boundaries
 
-| Component | Owns | Does not own |
-| --- | --- | --- |
-| API | HTTP validation, lifecycle endpoints, SSE transport | Graph decisions or repository access |
-| Application service | Run concurrency, graph invocation/resume, event publication | Prompt logic |
-| LangGraph graph | State transitions, parallelism, interrupts, retry routing | Provider SDK details or arbitrary shell execution |
-| Nodes | One engineering responsibility and typed state update | Cross-run persistence plumbing |
-| Model gateway | Provider construction, structured output, usage normalization, routing | Workflow sequencing |
-| Repository tools | Canonical paths, capabilities, bounded reads/writes/commands | Choosing what engineering change to make |
-| Persistence | Checkpoints, run projections, append-only events | Business routing |
-| Observability | Correlated logs, traces, timings, usage | Authoritative workflow state |
+| Component           | Owns                                                                   | Does not own                                      |
+| ------------------- | ---------------------------------------------------------------------- | ------------------------------------------------- |
+| API                 | HTTP validation, lifecycle endpoints, SSE transport                    | Graph decisions or repository access              |
+| Application service | Run concurrency, graph invocation/resume, event publication            | Prompt logic                                      |
+| LangGraph graph     | State transitions, parallelism, interrupts, retry routing              | Provider SDK details or arbitrary shell execution |
+| Nodes               | One engineering responsibility and typed state update                  | Cross-run persistence plumbing                    |
+| Model gateway       | Provider construction, structured output, usage normalization, routing | Workflow sequencing                               |
+| Repository tools    | Canonical paths, capabilities, bounded reads/writes/commands           | Choosing what engineering change to make          |
+| Persistence         | Checkpoints, run projections, append-only events                       | Business routing                                  |
+| Observability       | Correlated logs, traces, timings, usage                                | Authoritative workflow state                      |
 
 ## Workflow
 
@@ -69,19 +69,19 @@ Architecture and repository-impact analysis run in the same LangGraph superstep.
 
 The graph uses a versioned `WorkflowState` schema. Nodes return partial updates rather than mutating shared objects. State areas and owners are:
 
-| State area | Primary writer | Lifecycle |
-| --- | --- | --- |
-| Run/task metadata and policy snapshot | run service | Immutable after start; lifecycle status lives in the run projection |
-| Repository descriptor and context manifest | context node | Replaced when context is refreshed |
-| Task analysis and plan | analysis/planning nodes | Stable after approval unless explicitly revised |
-| Architecture and impact findings | parallel analysis nodes | Stable after join |
-| Approval request and decisions | plan/write/command approval nodes | Append-only decisions |
-| Proposed/applied changes | implementation/repair nodes | Replaced per attempt; applied records append |
-| Validation and diagnosis | test/diagnosis nodes | Latest result plus bounded attempt summaries |
-| Retry counters | deterministic routing nodes | Monotonic and policy bounded |
-| Review findings | review node | Latest structured review |
-| Model decisions and usage | model gateway | Append-only bounded summaries |
-| Terminal outcome | report node | Set once after deterministic outcome evaluation |
+| State area                                 | Primary writer                    | Lifecycle                                                           |
+| ------------------------------------------ | --------------------------------- | ------------------------------------------------------------------- |
+| Run/task metadata and policy snapshot      | run service                       | Immutable after start; lifecycle status lives in the run projection |
+| Repository descriptor and context manifest | context node                      | Replaced when context is refreshed                                  |
+| Task analysis and plan                     | analysis/planning nodes           | Stable after approval unless explicitly revised                     |
+| Architecture and impact findings           | parallel analysis nodes           | Stable after join                                                   |
+| Approval request and decisions             | plan/write/command approval nodes | Append-only decisions                                               |
+| Proposed/applied changes                   | implementation/repair nodes       | Replaced per attempt; applied records append                        |
+| Validation and diagnosis                   | test/diagnosis nodes              | Latest result plus bounded attempt summaries                        |
+| Retry counters                             | deterministic routing nodes       | Monotonic and policy bounded                                        |
+| Review findings                            | review node                       | Latest structured review                                            |
+| Model decisions and usage                  | model gateway                     | Append-only bounded summaries                                       |
+| Terminal outcome                           | report node                       | Set once after deterministic outcome evaluation                     |
 
 Repository context stores file metadata and hashes rather than a full source snapshot. Proposed file contents and application-owned hash preconditions remain in the checkpoint so a write approval can resume safely, while the API redacts contents and exposes byte counts. Full patches and validation logs cross an artifact boundary into immutable local or S3-compatible objects; graph state and events retain only bounded summaries plus artifact references and digests.
 
@@ -111,7 +111,19 @@ sequenceDiagram
     User->>Client: Approve
     Client->>API: POST /runs/{id}/approve
     API->>Graph: Command(resume=decision)
-    Graph->>Repo: Apply validated changes and run allowed tests
+    Graph->>Model: Propose implementation
+    opt write approval enabled
+        Graph-->>Client: Interrupt with proposed files
+        User->>Client: Approve write
+        Client->>Graph: Resume decision
+    end
+    Graph->>Repo: Apply transactional file changes
+    opt command approval enabled
+        Graph-->>Client: Interrupt with validation commands
+        User->>Client: Approve commands
+        Client->>Graph: Resume decision
+    end
+    Graph->>Repo: Run allowed validation commands
     alt tests fail and retries remain
         Graph->>Model: Diagnose failure and propose repair
         Graph->>Repo: Apply repair and retest
@@ -139,9 +151,10 @@ The provider factory covers deterministic demo, OpenAI, Anthropic, and OpenAI-co
 
 Repository context is selected with a deterministic lexical relevance score over paths and bounded
 file content, using the task, objective, plan, or repair diagnosis as the query. Stable tie-breaking
-keeps evaluations repeatable while avoiding the blind spots of alphabetical truncation. This is a
-local retrieval layer, not an embedding service, so very large or semantically indirect codebases
-may still benefit from a future indexed hybrid retriever.
+keeps evaluations repeatable while avoiding the blind spots of alphabetical truncation. The local
+retrieval layer deliberately avoids an embedding-service dependency; operators should narrow the
+allowed repository scope when a very large or semantically indirect codebase exceeds its context
+budget.
 
 ## Repository tool security
 
@@ -159,7 +172,7 @@ The default policy requires one approval after the plan and parallel architectur
 
 ## Streaming
 
-The graph emits typed internal events. The application service normalizes them into stable public events and persists each event before live publication. `GET /runs/{id}/events` uses Server-Sent Events and `Last-Event-ID` supports replay; bounded durable-store refresh makes events visible when another process writes them. Mutations remain ordinary HTTP requests. Opaque bearer tokens or OIDC identities owner-scope run lookup/listing, SSE, approvals, and artifact downloads. The authenticated subject becomes the approval actor, optional roles authorize approvals, and the admin role enables fleet-wide run/event inspection. A future `/v1` API will version the public schema before backward-incompatible changes are introduced.
+The graph emits typed internal events. The application service normalizes them into stable public events and persists each event before live publication. `GET /runs/{id}/events` uses Server-Sent Events and `Last-Event-ID` supports replay; bounded durable-store refresh makes events visible when another process writes them. Mutations remain ordinary HTTP requests. Opaque bearer tokens or OIDC identities owner-scope run lookup/listing, SSE, approvals, and artifact downloads. The authenticated subject becomes the approval actor, optional roles authorize approvals, and the admin role enables fleet-wide run/event inspection. Public schema changes must remain backward compatible or be introduced behind an explicit API version.
 
 ## Failure recovery
 
@@ -179,4 +192,6 @@ Local development runs graph orchestration and SQLite in the API process, plus t
 - **SSE over WebSockets:** simpler replay and operations for one-way progress; interactive token-by-token bidirectional sessions are out of scope.
 - **Artifact references in state:** checkpoints and SSE remain bounded while local/S3 objects retain full evidence; operators must apply object-store lifecycle and encryption policy.
 - **Embedded or leased orchestration:** embedded mode keeps local setup small; API/worker modes add durable queue claims and operational lease tuning for horizontal execution.
-- **Allowlisted host processes:** practical for trusted development; hostile repositories require external isolation.
+- **Host or container validation:** host execution keeps trusted local development simple; the
+  container backend confines validation processes, while hostile tenants require isolation around
+  the whole service.

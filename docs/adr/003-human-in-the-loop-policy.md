@@ -19,4 +19,6 @@ Interrupt once after planning, architecture review, and repository-impact analys
 
 ## Consequences
 
-The default has a useful safety/flow balance and resumes through a framework-native interrupt. Plans must be sufficiently structured for informed approval. Additional gates would require explicit graph nodes and are outside v0.1.0.
+The default has a useful safety/flow balance and resumes through a framework-native interrupt. Plans
+must be sufficiently structured for informed approval. Deployments that need more control can enable
+the independent write and command gates described in [ADR 009](009-multi-stage-approvals.md).
