@@ -205,6 +205,7 @@ and live-provider tests are enabled only by their documented environment variabl
 
 ## Documentation
 
+- [Compatibility and upgrades](docs/compatibility.md)
 - [Architecture](docs/architecture.md) and [LangGraph/LangChain design](docs/langgraph-design.md)
 - [Use TaskPilot on your repository](docs/use-your-repository.md)
 - [Authentication, artifacts, workers, and isolated execution](docs/deployment.md)

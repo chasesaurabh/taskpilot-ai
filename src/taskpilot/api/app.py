@@ -41,7 +41,7 @@ def create_app(
 ) -> FastAPI:
     app = FastAPI(
         title="TaskPilot AI API",
-        version="0.2.0",
+        version="1.0.0",
         description="Lifecycle API for durable software-engineering workflows.",
         lifespan=lifespan,
     )

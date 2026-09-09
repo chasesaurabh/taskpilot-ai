@@ -5,6 +5,20 @@ All notable changes to TaskPilot AI are documented in this file. The project fol
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-09
+
+### Changed
+
+- Declare the first stable release of the existing human-governed delivery workflow, including
+  durable approvals, bounded repair, repository transactions, authentication, artifacts, and workers.
+- Define the supported API, CLI, configuration, and upgrade compatibility policy for 1.x.
+- Support security fixes through versioned releases on the latest stable 1.x line.
+- Refresh product, deployment, security, and publishing documentation.
+- Update Rich to 15.0.0, structlog to 26.1.0, and mypy to 2.3.1 in the dependency lockfile.
+
+No intentional public API, CLI, configuration, or database schema changes are introduced from 0.2.0.
+See [compatibility and upgrades](docs/compatibility.md) before upgrading an existing deployment.
+
 ## [0.2.0] - 2026-09-02
 
 ### Added

@@ -6,7 +6,9 @@ Please report vulnerabilities through GitHub's private **Report a vulnerability*
 
 ## Supported versions
 
-Until the first stable release, security fixes are applied to the latest commit on `main` only.
+Security fixes are released for the latest stable 1.x release. Upgrade to the latest 1.x version
+to receive fixes; earlier minor and patch releases and the pre-stable 0.x series are not maintained
+separately. Fixes are developed on `main` and published as versioned releases.
 
 ## Threat model
 

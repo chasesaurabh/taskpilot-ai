@@ -4,14 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "taskpilot-ai"
-version = "0.2.0"
+version = "1.0.0"
 description = "Human-governed graph orchestration for software engineering delivery"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { file = "LICENSE" }
 authors = [{ name = "Saurabh Chase" }]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Developers",
   "License :: OSI Approved :: Apache Software License",
   "Operating System :: OS Independent",

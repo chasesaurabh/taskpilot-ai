@@ -17,8 +17,9 @@ the repository-scoped `GITHUB_TOKEN` to push images and require no registry secr
 
 ## Publish a release
 
-1. Update both `project.version` in `pyproject.toml` and `version` in
-   `apps/web/package.json`.
+1. Update `project.version` in `pyproject.toml`, `version` in `apps/web/package.json`,
+   `__version__` in `src/taskpilot/__init__.py`, the FastAPI version in
+   `src/taskpilot/api/app.py`, and the package-version test. Refresh `uv.lock` and the changelog.
 2. Complete the release checks and merge the release commit.
 3. Create and push a `v<version>` tag on that commit.
 4. Publish the matching GitHub Release. Publishing the release starts the workflow automatically.
