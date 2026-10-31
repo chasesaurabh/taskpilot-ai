@@ -1,4 +1,4 @@
-FROM python:3.12-slim AS runtime
+FROM python:3.15-slim AS runtime
 
 ARG TASKPILOT_UID=1000
 ARG TASKPILOT_GID=1000
